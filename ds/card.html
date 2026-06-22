@@ -1,0 +1,31 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { margin: 0; background: #f4efe1; color: #1c2b21; padding: 28px; font-family: system-ui, -apple-system, sans-serif; }
+  h2 { font-family: 'Fraunces', Georgia, serif; font-size: 16px; margin: 0 0 18px; }
+  .card {
+    position: relative; overflow: hidden; background: #fffdf7;
+    border: 1px solid rgba(31,90,60,0.14); border-radius: 16px; padding: 16px;
+    box-shadow: 0 1px 2px rgba(28,43,33,0.06), 0 8px 24px rgba(28,43,33,0.10);
+    max-width: 340px;
+  }
+  .frame { position: absolute; inset: 5px; border-radius: 11px; border: 1px solid rgba(31,90,60,0.14); pointer-events: none; }
+  .inner { position: relative; }
+  .title { font-family: 'Fraunces', Georgia, serif; font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+  .body { font-size: 13px; color: #5e6c60; line-height: 1.55; margin: 0; }
+</style>
+</head>
+<body>
+  <h2>Card</h2>
+  <div class="card">
+    <div class="frame"></div>
+    <div class="inner">
+      <p class="title">Parchment card</p>
+      <p class="body">A warm raised surface with an inset engraved hairline frame — the heirloom / museum-catalog container the apps build on.</p>
+    </div>
+  </div>
+</body>
+</html>

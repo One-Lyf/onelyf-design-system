@@ -1,0 +1,28 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { margin: 0; background: #f4efe1; color: #1c2b21; padding: 28px; font-family: system-ui, -apple-system, sans-serif; }
+  h2 { font-family: 'Fraunces', Georgia, serif; font-size: 16px; margin: 0 0 18px; }
+  .stack { display: flex; flex-direction: column; gap: 14px; max-width: 320px; }
+  button {
+    border-radius: 11px; padding: 12px 16px; font-size: 13.5px; font-family: inherit;
+    font-weight: 700; cursor: pointer; width: 100%; letter-spacing: 0.01em;
+  }
+  .primary {
+    background: linear-gradient(180deg,#2a936a,#15623c); color: #fbf8ee; border: none;
+    box-shadow: 0 1px 2px rgba(28,43,33,0.10), 0 6px 16px rgba(31,122,77,0.20);
+  }
+  .ghost { background: transparent; color: #1f7a4d; border: 1px solid rgba(31,90,60,0.30); box-shadow: none; }
+</style>
+</head>
+<body>
+  <h2>Button</h2>
+  <div class="stack">
+    <button class="primary">Primary action</button>
+    <button class="ghost">Ghost action</button>
+  </div>
+</body>
+</html>
