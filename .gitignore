@@ -4,3 +4,7 @@ dist
 .DS_Store
 .vite
 node_modules/.tmp
+
+# design-sync: regenerable build/staging output (config + notes are committed)
+ds-bundle
+.ds-sync

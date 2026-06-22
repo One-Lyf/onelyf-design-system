@@ -1,0 +1,8 @@
+{
+  "pkg": "onelyf-design-system",
+  "globalName": "OneLyfDS",
+  "shape": "package",
+  "buildCmd": "npm run build",
+  "srcDir": "src",
+  "tsconfig": "tsconfig.app.json"
+}
