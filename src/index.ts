@@ -25,3 +25,7 @@ export { default as Button, buttonStyle, type ButtonProps, type ButtonVariant } 
 export { default as Card, type CardProps } from './components/Card'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
+
+// Brand reference boards (reference only — not UI building blocks)
+export { default as RootGlyphBoard, type RootGlyphBoardProps } from './components/RootGlyphBoard'
+export { default as BrandIdentityBoard, type BrandIdentityBoardProps } from './components/BrandIdentityBoard'

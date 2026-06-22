@@ -1,0 +1,6 @@
+{
+  "projectId": "e34c055d-60e7-4c8e-8654-b2aa9a842887",
+  "pkg": "onelyf-design-system",
+  "shape": "package",
+  "entry": "./dist/onelyf-design-system.js"
+}
