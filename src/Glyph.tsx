@@ -7,13 +7,14 @@
 //   variant="essence" → reduced single-color mark for small / mono uses
 //                        (favicon, tiny UI).
 //
-// RASTER PLACEHOLDER: these are PNGs extracted from the brand board. The API is
-// intentionally stable so a delivered vector can swap in later without touching
-// any consumer. Imported (not in /public) so Vite content-hashes them — each
-// update gets a fresh URL, so browsers / PWAs can't serve a stale glyph.
-import crestUrl from './assets/glyph-crest.png'
-import liveUrl from './assets/glyph-live.png'
-import essenceUrl from './assets/glyph-essence.png'
+// VECTOR marks, traced from the approved GPT brand board (crisp at any size;
+// every tendril tapers to a point, north petal closes as a knot loop). live's
+// glow is a separate radial gradient inside the SVG, so it stays tintable.
+// Imported (not in /public) so Vite content-hashes them — each update gets a
+// fresh URL, so browsers / PWAs can't serve a stale glyph.
+import crestUrl from './assets/glyph-crest.svg'
+import liveUrl from './assets/glyph-live.svg'
+import essenceUrl from './assets/glyph-essence.svg'
 
 export type GlyphVariant = 'crest' | 'live' | 'essence'
 
