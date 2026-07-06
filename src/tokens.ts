@@ -35,6 +35,35 @@ export const color = {
   onPrimary: '#fbf8ee',
 } as const
 
+// ── Dark theme — natural palette (deep stone/earth/forest) ─────────────────
+// Deliberately NOT pure black — a warm, mossy dark rather than the cool
+// blue-black of typical SaaS dark mode. Same shape as `color`; a first pass
+// for Jeff to finalize exact values (visual-work-division law).
+export const colorDark = {
+  bg: '#171b16',         // deep stone-forest — the page ground
+  surface: '#20251f',    // raised card surface
+  surfaceHi: '#262c24',  // brightest surface (hover / active)
+  track: '#2c322a',      // inset track / muted fill
+
+  ink: '#e8e4d6',        // primary text — warm parchment
+  mid: '#a8ad9c',        // secondary text
+  dim: '#767c6c',        // tertiary / hint text
+
+  primary: '#3fae7a',    // forest-green, brightened for contrast on dark
+  primaryDeep: '#2c8a5e',
+  gold: '#d8a83c',       // heirloom gold, brightened for dark bg
+  goldDeep: '#b98a24',
+
+  success: '#3fbd7a',
+  danger: '#e0776b',
+  warning: '#e0a050',
+
+  border: 'rgba(232,228,214,0.10)',
+  borderBright: 'rgba(232,228,214,0.22)',
+
+  onPrimary: '#0f130e',
+} as const
+
 // ── Per-space accents (brief §6) ────────────────────────────────────────────
 // Each life domain is a NODE in the root network with its own accent. The
 // accent carries forward into that space's app; the foundation palette stays
@@ -85,6 +114,14 @@ export const shadow = {
   primary: '0 1px 2px rgba(28,43,33,0.10), 0 6px 16px rgba(31,122,77,0.20)',
 } as const
 
+// Dark-theme shadows read against a dark ground, so they lean on true black
+// rather than the ink-green used for light-mode depth.
+export const shadowDark = {
+  card: '0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.45)',
+  soft: '0 1px 2px rgba(0,0,0,0.30), 0 10px 26px rgba(0,0,0,0.35)',
+  primary: '0 1px 2px rgba(0,0,0,0.40), 0 6px 16px rgba(63,174,122,0.30)',
+} as const
+
 // ── Convenience bundle ──────────────────────────────────────────────────────
-export const tokens = { color, spaces, spaceList, font, radius, shadow } as const
+export const tokens = { color, colorDark, spaces, spaceList, font, radius, shadow, shadowDark } as const
 export default tokens
