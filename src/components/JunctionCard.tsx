@@ -4,7 +4,8 @@
 // directional + typed; the arrow shows flow direction. Presentational shell of
 // the live `LivMealInsight` card in finlyf-cash-stash — no data/fetch logic.
 import type { CSSProperties, ReactNode } from 'react'
-import { color, font } from '../tokens'
+import { font } from '../tokens'
+import { cssVar } from '../theme'
 import Glyph from '../Glyph'
 
 export interface JunctionCardProps {
@@ -37,7 +38,7 @@ export default function JunctionCard({
       style={{
         position: 'relative',
         overflow: 'hidden',
-        border: `1px solid ${color.borderBright}`,
+        border: `1px solid ${cssVar.borderBright}`,
         borderRadius: 16,
         padding: '16px 16px 15px',
         // warm parchment / heirloom card — the cross-domain junction moment
@@ -49,7 +50,7 @@ export default function JunctionCard({
       {/* engraved hairline frame, just inside the border — archival feel */}
       <div
         aria-hidden
-        style={{ position: 'absolute', inset: 5, borderRadius: 12, border: `1px solid ${color.border}`, pointerEvents: 'none' }}
+        style={{ position: 'absolute', inset: 5, borderRadius: 12, border: `1px solid ${cssVar.border}`, pointerEvents: 'none' }}
       />
       <div style={{ position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 11 }}>
@@ -61,7 +62,7 @@ export default function JunctionCard({
                 fontWeight: 700,
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase',
-                color: color.gold,
+                color: cssVar.gold,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
@@ -74,18 +75,18 @@ export default function JunctionCard({
                 fontFamily: font.serif,
                 fontSize: 19,
                 fontWeight: 700,
-                color: color.primaryDeep,
+                color: cssVar.primaryDeep,
                 letterSpacing: '-0.01em',
                 lineHeight: 1.1,
                 marginTop: 2,
               }}
             >
-              {from} <span style={{ color: color.gold, fontWeight: 600 }}>{direction}</span> {to}
+              {from} <span style={{ color: cssVar.gold, fontWeight: 600 }}>{direction}</span> {to}
             </div>
           </div>
         </div>
         {children && (
-          <div style={{ fontSize: 12.5, color: color.mid, marginBottom: action ? 11 : 0, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12.5, color: cssVar.mid, marginBottom: action ? 11 : 0, lineHeight: 1.5 }}>
             {children}
           </div>
         )}

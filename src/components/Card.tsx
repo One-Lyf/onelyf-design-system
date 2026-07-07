@@ -2,7 +2,8 @@
 // Parchment surface card with the engraved hairline frame (the heirloom /
 // museum-catalog feel from the brief §13). Presentational container only.
 import type { CSSProperties, ReactNode } from 'react'
-import { color, radius, shadow } from '../tokens'
+import { radius } from '../tokens'
+import { cssVar, shadowVar } from '../theme'
 
 export interface CardProps {
   children?: ReactNode
@@ -18,11 +19,11 @@ export default function Card({ children, framed = true, padding = 16, style }: C
       style={{
         position: 'relative',
         overflow: 'hidden',
-        background: color.surface,
-        border: `1px solid ${color.border}`,
+        background: cssVar.surface,
+        border: `1px solid ${cssVar.border}`,
         borderRadius: radius.lg,
         padding,
-        boxShadow: shadow.card,
+        boxShadow: shadowVar.card,
         ...style,
       }}
     >
@@ -33,7 +34,7 @@ export default function Card({ children, framed = true, padding = 16, style }: C
             position: 'absolute',
             inset: 5,
             borderRadius: radius.md,
-            border: `1px solid ${color.border}`,
+            border: `1px solid ${cssVar.border}`,
             pointerEvents: 'none',
           }}
         />

@@ -3,7 +3,8 @@
 // accent-colored node + label. Used in the OneLyf home (spaces above ground)
 // and the Liv connection console. Presentational only — no app logic.
 import type { CSSProperties } from 'react'
-import { color, font, spaces, type SpaceKey } from '../tokens'
+import { font, spaces, type SpaceKey } from '../tokens'
+import { cssVar } from '../theme'
 
 export interface SpaceNodeProps {
   /** One of the known spaces — pulls its accent + label automatically. */
@@ -31,7 +32,7 @@ export default function SpaceNode({
   style,
 }: SpaceNodeProps) {
   const def = space ? spaces[space] : undefined
-  const dot = accent ?? def?.accent ?? color.primary
+  const dot = accent ?? def?.accent ?? cssVar.primary
   const text = label ?? def?.label ?? ''
 
   return (
@@ -55,7 +56,7 @@ export default function SpaceNode({
           fontSize: 15,
           fontWeight: 600,
           letterSpacing: '-0.01em',
-          color: color.ink,
+          color: cssVar.ink,
         }}
       >
         {text}

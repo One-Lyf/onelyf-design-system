@@ -6,16 +6,31 @@
 // Tokens
 export {
   color,
+  colorDark,
   spaces,
   spaceList,
   font,
   radius,
   shadow,
+  shadowDark,
   tokens,
   default as tokensDefault,
   type Space,
   type SpaceKey,
 } from './tokens'
+
+// Theme runtime — CSS-variable tokens + light/dark/system mode state
+export {
+  cssVar,
+  shadowVar,
+  themeStylesheet,
+  resolveTheme,
+  getStoredThemeMode,
+  setThemeMode,
+  initTheme,
+  type ThemeMode,
+  type ResolvedTheme,
+} from './theme'
 
 // Brand mark
 export { default as Glyph, type GlyphProps, type GlyphVariant } from './Glyph'
@@ -25,6 +40,7 @@ export { default as Button, buttonStyle, type ButtonProps, type ButtonVariant } 
 export { default as Card, type CardProps } from './components/Card'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
+export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'
 
 // Brand reference boards (reference only — not UI building blocks)
 export { default as RootGlyphBoard, type RootGlyphBoardProps } from './components/RootGlyphBoard'
