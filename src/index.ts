@@ -34,6 +34,7 @@ export {
 
 // Brand mark
 export { default as Glyph, type GlyphProps, type GlyphVariant } from './Glyph'
+export { default as LivThinking, type LivThinkingProps } from './LivThinking'
 
 // Components
 export { default as Button, buttonStyle, type ButtonProps, type ButtonVariant } from './components/Button'
