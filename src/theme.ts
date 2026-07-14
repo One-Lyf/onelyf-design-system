@@ -81,13 +81,28 @@ export function setThemeMode(mode: ThemeMode) {
   applyResolvedTheme(mode)
 }
 
-// Call once on app boot: applies the stored (or default-dark) mode and, when
-// the mode is 'system', keeps it synced with OS-level scheme changes.
+let systemListenerAttached = false
+
+// Call once on app boot: applies the stored (or default-dark) mode and keeps
+// it synced with OS-level scheme changes whenever the *current* mode is
+// 'system' — not just whenever it happened to be 'system' at boot time.
 export function initTheme(): ThemeMode {
   const mode = getStoredThemeMode()
   applyResolvedTheme(mode)
-  if (mode === 'system' && typeof window !== 'undefined') {
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyResolvedTheme('system'))
+  if (typeof window !== 'undefined' && !systemListenerAttached) {
+    systemListenerAttached = true
+    // Re-read the stored mode on every OS scheme change rather than closing
+    // over the boot-time mode. Two bugs this avoids:
+    //  1. Switching *into* 'system' via setThemeMode() after boot (i.e. not
+    //     present when initTheme() ran) would otherwise never pick up OS
+    //     changes until the next full page load.
+    //  2. Switching *out of* 'system' into an explicit 'light'/'dark' would
+    //     otherwise leave a stale listener that silently re-applies
+    //     'system' resolution on the next OS change, clobbering the
+    //     user's explicit choice.
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (getStoredThemeMode() === 'system') applyResolvedTheme('system')
+    })
   }
   return mode
 }
