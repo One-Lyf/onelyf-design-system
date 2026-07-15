@@ -8,6 +8,7 @@
 //   @keyframes liv-think { 0%,100%{transform:scale(.95);opacity:.7} 50%{transform:scale(1.06);opacity:1} }
 //   @media (prefers-reduced-motion: reduce){ .liv-think{animation:none;opacity:1} }
 import liveUrl from './assets/glyph-live.svg'
+import { cssVar } from './theme'
 
 export interface LivThinkingProps {
   /** Glyph size in px. */
@@ -30,7 +31,7 @@ export default function LivThinking({ size = 44, caption, label = 'Liv is thinki
         height={size}
         style={{ display: 'block', objectFit: 'contain', transformOrigin: 'center' }}
       />
-      {caption && <span style={{ fontSize: 13, color: '#5e6c60' }}>{caption}</span>}
+      {caption && <span style={{ fontSize: 13, color: cssVar.mid }}>{caption}</span>}
     </span>
   )
 }
