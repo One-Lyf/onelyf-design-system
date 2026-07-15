@@ -45,7 +45,16 @@ export default function SpaceNode({
           borderRadius: '50%',
           background: dot,
           // Warm lantern halo when "lit"; just the engraved dot when dormant.
-          boxShadow: dormant ? 'none' : `0 0 0 4px ${dot}22, 0 0 10px ${dot}55`,
+          // Built with color-mix() rather than a hex alpha suffix (`${dot}22`)
+          // because `dot` isn't always a hex literal — it falls back to
+          // cssVar.primary, a `var(--ds-primary)` reference. Appending a hex
+          // suffix to a var() call produces an invalid color (`var(...)22`),
+          // which invalidates the whole comma-separated box-shadow value and
+          // silently drops the glow. color-mix() composes correctly with
+          // both hex literals and CSS custom-property references.
+          boxShadow: dormant
+            ? 'none'
+            : `0 0 0 4px color-mix(in srgb, ${dot} 13%, transparent), 0 0 10px color-mix(in srgb, ${dot} 33%, transparent)`,
           opacity: dormant ? 0.55 : 1,
           flexShrink: 0,
         }}
