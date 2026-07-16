@@ -13,6 +13,13 @@ const STORAGE_KEY = 'onelyf-theme'
 const VAR_PREFIX = '--ds-'
 const DEFAULT_MODE: ThemeMode = 'dark'
 
+// Broadcast so every mounted ThemeToggle (or other mode-reading component)
+// stays in sync — without this, a second toggle instance on the same page
+// (e.g. header + settings) never learns of a change made via the first one
+// until it remounts, and its next click computes `next` off its own stale
+// mode.
+export const THEME_CHANGE_EVENT = 'onelyf-theme-change'
+
 const toKebab = (key: string) => key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)
 
 function colorVarLines(palette: Record<string, string>): string {
@@ -79,6 +86,9 @@ function applyResolvedTheme(mode: ThemeMode) {
 export function setThemeMode(mode: ThemeMode) {
   if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, mode)
   applyResolvedTheme(mode)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent<ThemeMode>(THEME_CHANGE_EVENT, { detail: mode }))
+  }
 }
 
 let systemListenerAttached = false

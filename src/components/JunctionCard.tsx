@@ -5,7 +5,7 @@
 // the live `LivMealInsight` card in finlyf-cash-stash — no data/fetch logic.
 import type { CSSProperties, ReactNode } from 'react'
 import { font } from '../tokens'
-import { cssVar } from '../theme'
+import { cssVar, shadowVar } from '../theme'
 import Glyph from '../Glyph'
 
 export interface JunctionCardProps {
@@ -41,9 +41,13 @@ export default function JunctionCard({
         border: `1px solid ${cssVar.borderBright}`,
         borderRadius: 16,
         padding: '16px 16px 15px',
-        // warm parchment / heirloom card — the cross-domain junction moment
-        background: 'linear-gradient(176deg, #fbf6e7 0%, #f6efdc 100%)',
-        boxShadow: '0 1px 2px rgba(28,43,33,0.05), 0 10px 26px rgba(28,43,33,0.08)',
+        // warm parchment / heirloom card — the cross-domain junction moment.
+        // Theme-reactive (cssVar/shadowVar), same as Card's identical "parchment
+        // surface" treatment — this was previously hardcoded to light-mode-only
+        // literals, so the caption text (cssVar.mid) went low-contrast against
+        // it in dark mode once cssVar.mid switched to its light-on-dark value.
+        background: `linear-gradient(176deg, ${cssVar.surfaceHi} 0%, ${cssVar.surface} 100%)`,
+        boxShadow: shadowVar.card,
         ...style,
       }}
     >
