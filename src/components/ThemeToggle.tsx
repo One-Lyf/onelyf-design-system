@@ -3,7 +3,7 @@
 // theme state itself (initTheme/setThemeMode) so a consuming app only needs
 // to render <ThemeToggle /> once `themeStylesheet` is on the page.
 import { useEffect, useState } from 'react'
-import { cssVar, initTheme, setThemeMode, type ThemeMode } from '../theme'
+import { cssVar, initTheme, setThemeMode, THEME_CHANGE_EVENT, type ThemeMode } from '../theme'
 
 const ORDER: ThemeMode[] = ['dark', 'light', 'system']
 const LABEL: Record<ThemeMode, string> = { dark: 'Dark', light: 'Light', system: 'System' }
@@ -17,6 +17,13 @@ export default function ThemeToggle({ className }: ThemeToggleProps) {
 
   useEffect(() => {
     setMode(initTheme())
+    // Stay in sync with mode changes from any OTHER mounted ThemeToggle (or
+    // any other setThemeMode() caller) — otherwise this instance's `mode`
+    // goes stale until it's clicked or remounted, and its next click cycles
+    // from the wrong starting point.
+    const onChange = (e: Event) => setMode((e as CustomEvent<ThemeMode>).detail)
+    window.addEventListener(THEME_CHANGE_EVENT, onChange)
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, onChange)
   }, [])
 
   const cycle = () => {

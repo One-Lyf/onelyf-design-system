@@ -18,7 +18,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 export function buttonStyle(variant: ButtonVariant = 'primary', full = true): CSSProperties {
   const isGhost = variant === 'ghost'
   return {
-    background: isGhost ? 'transparent' : 'linear-gradient(180deg,#2a936a,#15623c)',
+    // Theme-reactive (was a hardcoded light-mode gradient) — `color` below
+    // already used cssVar.onPrimary, which is intentionally different per
+    // theme to pair with the *current* theme's primary fill; pairing it with
+    // a fixed light-mode gradient dropped dark-mode contrast to ~3.9:1.
+    background: isGhost ? 'transparent' : `linear-gradient(180deg, ${cssVar.primary}, ${cssVar.primaryDeep})`,
     color: isGhost ? cssVar.primary : cssVar.onPrimary,
     border: isGhost ? `1px solid ${cssVar.borderBright}` : 'none',
     borderRadius: radius.md,
