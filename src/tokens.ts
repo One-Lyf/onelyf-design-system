@@ -21,7 +21,9 @@ export const color = {
   primary: '#1f7a4d',   // forest-green — the brand green ("blue" in the legacy C object)
   primaryDeep: '#15623c',
   gold: '#c08a14',      // heirloom gold — Liv's warm accent + FinLyf space
-  goldDeep: '#9c6f10',
+  goldDeep: '#8a630e',  // text-safe gold: #9c6f10 only hit ~3.9-4.4:1 against
+                         // surface/surfaceHi/bg — under WCAG AA's 4.5:1 floor
+                         // for small text. This clears 4.5:1+ on all three.
 
   // Functional / status (kept from the live app palette)
   success: '#1f9d5e',
