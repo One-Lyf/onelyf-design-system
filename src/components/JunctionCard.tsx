@@ -66,7 +66,12 @@ export default function JunctionCard({
                 fontWeight: 700,
                 letterSpacing: '0.2em',
                 textTransform: 'uppercase',
-                color: cssVar.gold,
+                // cssVar.gold is a fill/accent token (~3:1 against the card's
+                // light-mode surface — fails WCAG AA's 4.5:1 floor for text
+                // this small, same class of bug as the dark-mode contrast
+                // breaks fixed above). goldDeep is the text-safe variant,
+                // same pattern as primaryDeep just below.
+                color: cssVar.goldDeep,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
@@ -85,7 +90,7 @@ export default function JunctionCard({
                 marginTop: 2,
               }}
             >
-              {from} <span style={{ color: cssVar.gold, fontWeight: 600 }}>{direction}</span> {to}
+              {from} <span style={{ color: cssVar.goldDeep, fontWeight: 600 }}>{direction}</span> {to}
             </div>
           </div>
         </div>
