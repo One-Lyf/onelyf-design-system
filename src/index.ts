@@ -9,7 +9,11 @@ export {
   colorDark,
   spaces,
   spaceList,
+  space,
   font,
+  type,
+  textStyle,
+  motion,
   radius,
   shadow,
   shadowDark,
@@ -17,7 +21,13 @@ export {
   default as tokensDefault,
   type Space,
   type SpaceKey,
+  type TypeStep,
+  type TypeRole,
 } from './tokens'
+
+// Component stylesheet — inject once, alongside themeStylesheet, for the
+// shared :hover / :focus-visible / :disabled states.
+export { componentStylesheet } from './styles'
 
 // Theme runtime — CSS-variable tokens + light/dark/system mode state
 export {
@@ -39,6 +49,15 @@ export { default as LivThinking, type LivThinkingProps } from './LivThinking'
 // Components
 export { default as Button, buttonStyle, type ButtonProps, type ButtonVariant } from './components/Button'
 export { default as Card, type CardProps } from './components/Card'
+export {
+  Input, Textarea, Select, Field,
+  type InputProps, type TextareaProps, type SelectProps, type FieldProps,
+} from './components/Input'
+export {
+  EmptyState, Spinner, Skeleton, ErrorState, Badge,
+  type EmptyStateProps, type SpinnerProps, type SkeletonProps, type ErrorStateProps,
+  type BadgeProps, type BadgeTone,
+} from './components/States'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
 export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'

@@ -93,12 +93,90 @@ export const spaces: Record<SpaceKey, Space> = {
 
 export const spaceList: Space[] = Object.values(spaces)
 
+// ── Spacing ─────────────────────────────────────────────────────────────────
+// One rhythm, everywhere. A 4px base step so every gap/pad/margin lands on the
+// grid — this is the single lever that kills "arbitrary spacing". Reach for a
+// named step (`space.md`) in components; the numeric map (`space[4]`) is there
+// for the odd one-off. Never hand-type a raw pixel gap in an app again.
+export const space = {
+  0: 0,
+  1: 4,
+  2: 8,
+  3: 12,
+  4: 16,   // the default block gap
+  5: 20,
+  6: 24,   // section padding
+  7: 32,
+  8: 40,
+  9: 48,
+  10: 64,
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  '2xl': 48,
+} as const
+
 // ── Typography ──────────────────────────────────────────────────────────────
 export const font = {
   // Display serif — editorial / heirloom headings
   serif: "'Fraunces', 'Playfair Display', Georgia, 'Times New Roman', serif",
   // Body sans — system stack, calm and legible (multi-generational, brief §14)
   sans: "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+} as const
+
+// One type scale, role-named, everywhere. Headings are SERIF and clearly
+// heavier/larger than body so hierarchy reads at a glance; body/label/caption
+// are the sans stack. `size` is px, `line` is unitless line-height. Import a
+// role and spread it (`style={{ ...textStyle('h2') }}`) instead of hand-setting
+// fontSize — that's what removes the "no type hierarchy" tell.
+export interface TypeStep {
+  size: number
+  line: number
+  weight: number
+  family: string
+  letterSpacing?: string
+}
+
+export const type = {
+  display: { size: 40, line: 1.05, weight: 600, family: font.serif, letterSpacing: '-0.01em' },
+  h1:      { size: 30, line: 1.12, weight: 600, family: font.serif, letterSpacing: '-0.01em' },
+  h2:      { size: 23, line: 1.18, weight: 600, family: font.serif },
+  h3:      { size: 18, line: 1.25, weight: 600, family: font.serif },
+  title:   { size: 15, line: 1.3,  weight: 700, family: font.sans },   // card / row titles
+  body:    { size: 15, line: 1.5,  weight: 400, family: font.sans },
+  bodySm:  { size: 13.5, line: 1.5, weight: 400, family: font.sans },
+  label:   { size: 13, line: 1.3,  weight: 600, family: font.sans },   // form labels, buttons
+  caption: { size: 12, line: 1.4,  weight: 400, family: font.sans },   // hints, meta
+  overline:{ size: 11, line: 1.2,  weight: 700, family: font.sans, letterSpacing: '0.08em' },
+} as const satisfies Record<string, TypeStep>
+
+export type TypeRole = keyof typeof type
+
+// Spread into an inline `style` to apply a type role.
+export function textStyle(role: TypeRole): {
+  fontSize: number; lineHeight: number; fontWeight: number; fontFamily: string; letterSpacing?: string
+} {
+  const t = type[role]
+  return {
+    fontSize: t.size,
+    lineHeight: t.line,
+    fontWeight: t.weight,
+    fontFamily: t.family,
+    ...('letterSpacing' in t ? { letterSpacing: (t as TypeStep).letterSpacing } : {}),
+  }
+}
+
+// ── Motion ──────────────────────────────────────────────────────────────────
+// Calm, quick, consistent. One easing + a couple of durations so interactions
+// feel intentional without drawing attention to themselves (brief §13 — no
+// SaaS flourish). Honour prefers-reduced-motion at the app layer.
+export const motion = {
+  fast: '.12s',
+  base: '.18s',
+  slow: '.28s',
+  ease: 'cubic-bezier(0.4, 0, 0.2, 1)',
 } as const
 
 // ── Shape ───────────────────────────────────────────────────────────────────
@@ -125,5 +203,5 @@ export const shadowDark = {
 } as const
 
 // ── Convenience bundle ──────────────────────────────────────────────────────
-export const tokens = { color, colorDark, spaces, spaceList, font, radius, shadow, shadowDark } as const
+export const tokens = { color, colorDark, spaces, spaceList, space, font, type, motion, radius, shadow, shadowDark } as const
 export default tokens
