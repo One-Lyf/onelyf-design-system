@@ -9,13 +9,19 @@ export interface CardProps {
   children?: ReactNode
   /** Show the inset engraved hairline frame just inside the border. */
   framed?: boolean
+  /** Whole card is clickable — adds hover-lift + keyboard focus ring. */
+  interactive?: boolean
   style?: CSSProperties
   padding?: number | string
+  className?: string
 }
 
-export default function Card({ children, framed = true, padding = 16, style }: CardProps) {
+export default function Card({ children, framed = true, interactive = false, padding = 16, style, className }: CardProps) {
+  const cls = [interactive && 'ds-card-interactive', className].filter(Boolean).join(' ') || undefined
   return (
     <div
+      className={cls}
+      tabIndex={interactive ? 0 : undefined}
       style={{
         position: 'relative',
         overflow: 'hidden',
