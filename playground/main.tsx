@@ -14,6 +14,7 @@ import {
   EmptyState, Spinner, Skeleton, ErrorState, Badge,
 } from '../src'
 import { cssVar } from '../src/theme'
+import ControlPanel from './ControlPanel'
 
 initTheme()
 
@@ -42,9 +43,11 @@ function Playground() {
         color: cssVar.ink,
         fontFamily: type.body.family,
         padding: space.lg,
+        paddingRight: 260 + space.lg,
         boxSizing: 'border-box',
       }}
     >
+      <ControlPanel />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: space[8] }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm }}>
           <Glyph variant="crest" size={28} />
