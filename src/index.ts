@@ -58,6 +58,12 @@ export {
   type EmptyStateProps, type SpinnerProps, type SkeletonProps, type ErrorStateProps,
   type BadgeProps, type BadgeTone,
 } from './components/States'
+export {
+  default as LivChat, livChatStylesheet,
+  type LivChatProps, type LivHat, type LivChatAdapter,
+  type LivMessage, type LivSession, type LivAttachment, type LivKeyInfo,
+  type LivModel, type LivResult,
+} from './components/LivChat'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
 export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'

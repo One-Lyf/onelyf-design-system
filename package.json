@@ -7,15 +7,25 @@
   "engines": {
     "node": ">=22"
   },
-  "main": "./src/index.ts",
+  "main": "./dist/onelyf-design-system.js",
+  "module": "./dist/onelyf-design-system.js",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/onelyf-design-system.js"
+    },
     "./tokens": "./src/tokens.ts"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:lib": "vite build",
+    "prepare": "vite build",
     "preview": "vite preview"
   },
   "peerDependencies": {
