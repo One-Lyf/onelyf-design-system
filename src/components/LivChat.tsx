@@ -98,6 +98,20 @@ function attachmentsOf(m: LivMessage): LivAttachment[] {
   return []
 }
 
+// Single source of truth for turning a message's text into a session title —
+// shared by "type your first message with no session yet" (creates with this
+// title), the new-chat auto-title path (renames once the first message goes
+// out), and the one-time 'Untitled' backfill (renames on next load).
+function titleFromText(text?: string | null): string {
+  return (text || '').trim().slice(0, 48) || 'New chat'
+}
+// A session counts as still needing a title if it has none, or has the
+// literal placeholder the rail falls back to displaying.
+function isUntitled(title?: string | null): boolean {
+  const t = (title || '').trim()
+  return !t || t === 'Untitled'
+}
+
 // ── Minimal inline icon set (stroke glyphs, inherit currentColor) ────────────
 const ic: CSSProperties = { width: 14, height: 14, display: 'inline-block', verticalAlign: '-2px' }
 const svg = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, style: ic, 'aria-hidden': true }
@@ -112,6 +126,7 @@ const PencilI = () => <svg {...svg}><path d="M12 20h9" /><path d="M16.5 3.5a2.12
 const TrashI = () => <svg {...svg}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 const CopyI = () => <svg {...svg}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
 const CheckI = () => <svg {...svg}><polyline points="20 6 9 17 4 12" /></svg>
+const MenuI = () => <svg {...svg}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
 
 function ChannelIcon({ channel }: { channel?: string }) {
   if (channel === 'phone') return <PhoneI />
@@ -145,7 +160,23 @@ export const livChatStylesheet = `
 .lc-iconbtn:hover:not(:disabled) { background: var(--ds-track); }
 .lc-copy { opacity: 0; transition: opacity .12s ease; }
 .lc-bubble:hover .lc-copy, .lc-copy:focus-visible { opacity: 1; }
-@media (max-width: 620px) { .lc-body { grid-template-columns: 1fr !important; } .lc-rail { max-height: 180px; } }
+/* Below 620px the two-column grid collapses to one column and the session
+   rail stops taking up permanent vertical space above the transcript —
+   instead it's a toggleable sheet, shown/hidden via the .lc-rail-toggle
+   button and overlaid above the transcript when open. */
+@media (max-width: 620px) {
+  .lc-body { grid-template-columns: 1fr !important; position: relative; }
+  .lc-rail-toggle { display: inline-flex !important; }
+  .lc-rail {
+    display: none !important;
+    position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+    max-height: 70vh; overflow-y: auto;
+    background: var(--ds-surface); border: 1px solid var(--ds-border);
+    border-radius: ${radius.md}px; padding: 8px;
+    box-shadow: var(--ds-shadow-card);
+  }
+  .lc-rail[data-open="true"] { display: flex !important; }
+}
 `
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -169,6 +200,10 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  // Narrow-viewport session rail: hidden by default, toggled open as an
+  // overlay sheet (see .lc-rail-toggle / .lc-rail in livChatStylesheet).
+  // Irrelevant above the 620px breakpoint, where the rail is always visible.
+  const [railOpen, setRailOpen] = useState(false)
 
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
   const [showSettings, setShowSettings] = useState(false)
@@ -221,12 +256,26 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
     } catch (e) { console.error('resolveUrls failed', e) }
   }
 
+  // One-time client-side backfill: sessions created before auto-titling
+  // shipped are stuck on 'Untitled' server-side forever unless something
+  // retitles them. Rather than a server-side bulk migration, retitle lazily —
+  // the first time we happen to load that session's messages — reusing the
+  // exact same derivation as the new-chat auto-title path below.
+  function backfillTitle(id: string, msgs: LivMessage[]) {
+    const s = sessions.find((x) => x.id === id)
+    if (!s || !isUntitled(s.title)) return
+    const first = msgs.find((m) => m.content && m.content.trim())
+    if (!first) return
+    adapter.sessions.rename(id, titleFromText(first.content)).then(() => loadSessions())
+      .catch((e) => console.error('title backfill failed', e))
+  }
+
   async function selectSession(id: string) {
-    setActive(id); setMessages([]); setStreaming('')
+    setActive(id); setMessages([]); setStreaming(''); setRailOpen(false)
     try {
       const r = await adapter.messages.list(id)
       if (activeIdRef.current !== id) return // superseded by a newer click — discard.
-      if (r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages) }
+      if (r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages); backfillTitle(id, r.value.messages) }
     } catch (e) {
       if (activeIdRef.current !== id) return
       console.error('messages.list failed', e)
@@ -263,14 +312,22 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
 
     let sessionId = activeId
     const stillActive = () => activeIdRef.current === sessionId
+    // Was the active session created via "+ New chat" (or otherwise never
+    // titled) and hasn't had a message yet? If so, this send is its first —
+    // auto-title it from the message text once it's on its way.
+    const activeSession = sessions.find((s) => s.id === sessionId)
+    const needsAutoTitle = !!sessionId && messages.length === 0 && isUntitled(activeSession?.title)
 
     try {
       if (!sessionId) {
-        const r = await adapter.sessions.create(text.slice(0, 48) || 'New chat')
+        const r = await adapter.sessions.create(titleFromText(text))
         if (!r.ok) { setMsg('Could not start a conversation.'); return }
         sessionId = r.value.id
         setActive(sessionId)
         await loadSessions()
+      } else if (needsAutoTitle && text) {
+        adapter.sessions.rename(sessionId, titleFromText(text)).then(() => loadSessions())
+          .catch((e) => console.error('auto-title rename failed', e))
       }
 
       const tmpId = `tmp-${Math.round(performance.now())}-${sessions.length}`
@@ -396,7 +453,16 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
       )}
 
       <div className="lc-body" style={S.body}>
-        <aside className="lc-rail" style={S.rail}>
+        <button
+          type="button"
+          className="lc-rail-toggle ds-btn"
+          style={{ ...S.ghostBtn, display: 'none', width: '100%', marginBottom: space.xs, alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          aria-expanded={railOpen}
+          onClick={() => setRailOpen((o) => !o)}
+        >
+          <MenuI /> Sessions{sessions.length ? ` (${sessions.length})` : ''}
+        </button>
+        <aside className="lc-rail" data-open={railOpen} style={S.rail}>
           <button className="ds-btn" style={{ ...S.ghostBtn, width: '100%' }} onClick={newSession}>+ New chat</button>
           {sessions.length === 0 && <p style={S.muted}>No conversations yet.</p>}
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
