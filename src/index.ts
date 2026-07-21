@@ -38,6 +38,7 @@ export {
   getStoredThemeMode,
   setThemeMode,
   initTheme,
+  THEME_CHANGE_EVENT,
   type ThemeMode,
   type ResolvedTheme,
 } from './theme'
