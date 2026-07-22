@@ -218,6 +218,21 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
   const activeIdRef = useRef<string | null>(null)
   function setActive(id: string | null) { activeIdRef.current = id; setActiveId(id) }
 
+  // Mirrors renamingId synchronously, same reasoning as activeIdRef above.
+  // Committing (Enter) or cancelling (Escape) a rename calls setRenamingId(null),
+  // which unmounts the rename <input> on the next render — and browsers fire a
+  // native `blur` on a focused element the instant it's removed from the DOM.
+  // That blur re-invokes this SAME render's onBlur handler, i.e. the exact same
+  // commitRename closure that just ran, still closing over the OLD `renamingId`
+  // state value (component state is a fixed snapshot per closure — it can never
+  // observe the setRenamingId(null) call that closure itself just made). A guard
+  // written against that state is therefore a no-op: it reads identically on
+  // both the Enter/Escape call and the follow-up blur call, so it can never
+  // block the second one. Checking a ref instead works because the ref is
+  // mutated synchronously, so the follow-up blur sees the updated value.
+  const renamingIdRef = useRef<string | null>(null)
+  function setRenaming(id: string | null) { renamingIdRef.current = id; setRenamingId(id) }
+
   async function loadSessions(selectFirst = false) {
     try {
       const r = await adapter.sessions.list()
@@ -287,12 +302,12 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
     if (r.ok) { await loadSessions(); selectSession(r.value.id) }
   }
 
-  function startRename(s: LivSession) { setConfirmDeleteId(null); setRenamingId(s.id); setRenameDraft(s.title || '') }
-  function cancelRename() { setRenamingId(null); setRenameDraft('') }
+  function startRename(s: LivSession) { setConfirmDeleteId(null); setRenaming(s.id); setRenameDraft(s.title || '') }
+  function cancelRename() { setRenaming(null); setRenameDraft('') }
   async function commitRename(s: LivSession) {
-    if (renamingId !== s.id) return // Enter already committed; ignore the follow-up onBlur.
+    if (renamingIdRef.current !== s.id) return // Enter/Escape already handled this; ignore the follow-up onBlur.
     const title = renameDraft.trim()
-    setRenamingId(null)
+    setRenaming(null)
     if (!title || title === (s.title || '')) return
     await adapter.sessions.rename(s.id, title)
     loadSessions()
@@ -487,7 +502,7 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
                     ) : (
                       <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                         <button className="lc-iconbtn" style={S.iconbtn} title="Rename" onClick={() => startRename(s)}><PencilI /></button>
-                        <button className="lc-iconbtn" style={S.iconbtn} title="Delete" onClick={() => { setRenamingId(null); setConfirmDeleteId(s.id) }}><TrashI /></button>
+                        <button className="lc-iconbtn" style={S.iconbtn} title="Delete" onClick={() => { setRenaming(null); setConfirmDeleteId(s.id) }}><TrashI /></button>
                       </span>
                     )}
                   </>
