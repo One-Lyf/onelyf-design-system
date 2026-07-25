@@ -62,6 +62,16 @@ export function Textarea({ invalid, className, style, rows = 4, ...rest }: Texta
   )
 }
 
+// controlStyle() sets appearance:none (needed so Input/Textarea never show
+// browser chrome) — but on a <select> that also strips the native dropdown
+// chevron in every major browser, leaving no visual indicator that the
+// control opens a menu. Draw one back in as a background image (the classic
+// custom-select pattern); `currentColor` makes it track the control's own
+// text color, so it already follows cssVar.ink per theme with no extra var.
+const SELECT_CHEVRON = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l5 5 5-5"/></svg>',
+)}")`
+
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   invalid?: boolean
 }
@@ -70,7 +80,16 @@ export function Select({ invalid, className, style, children, ...rest }: SelectP
     <select
       className={['ds-input', className].filter(Boolean).join(' ')}
       aria-invalid={invalid || undefined}
-      style={{ ...controlStyle(invalid), paddingRight: space[7], cursor: 'pointer', ...style }}
+      style={{
+        ...controlStyle(invalid),
+        paddingRight: space[7],
+        cursor: 'pointer',
+        backgroundImage: SELECT_CHEVRON,
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: `right ${space.sm}px center`,
+        backgroundSize: 14,
+        ...style,
+      }}
       {...rest}
     >
       {children}
