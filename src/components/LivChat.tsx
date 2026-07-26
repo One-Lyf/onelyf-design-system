@@ -95,6 +95,10 @@ export interface LivChatAdapter {
 export interface LivChatProps {
   hat: LivHat
   adapter: LivChatAdapter
+  // Optional: report chat state up to a host that keeps this instance mounted across navigation
+  // (e.g. a persistent LivDock/bubble) — it drives the launcher's unread dot + thinking pulse.
+  // Omitted by inline hosts that don't need it.
+  onState?: (s: { messageCount: number; thinking: boolean }) => void
 }
 
 const DEFAULT_MODELS: LivModel[] = [
@@ -220,7 +224,7 @@ export const livChatStylesheet = `
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -303,6 +307,12 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
   }
 
   useEffect(() => { loadSessions(true); loadKey() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Report chat state to a persistent host (LivDock) so its bubble can show an unread dot / thinking
+  // pulse. thinking = a turn is in flight (sending) or streaming in. No-op when onState is omitted.
+  useEffect(() => {
+    onState?.({ messageCount: messages.length, thinking: sending || streaming.length > 0 })
+  }, [messages.length, sending, streaming, onState])
 
   useEffect(() => {
     const el = transcriptRef.current
