@@ -35,6 +35,23 @@ export interface LivMessage {
 export interface LivKeyInfo { hasKey: boolean; model?: string | null }
 export interface LivModel { id: string; label: string }
 
+// Per-turn token usage, as the backend reports it on the chat stream's `done`
+// event (Anthropic's native field names, flattened). Powers the token/cost
+// meter. All optional so an adapter that doesn't surface usage simply shows no
+// meter — never a crash.
+export interface LivUsage {
+  input?: number
+  output?: number
+  cacheCreate?: number
+  cacheRead?: number
+}
+
+// What `adapter.chat.send` resolves to. Flat (not LivResult<T>) to mirror the
+// federation `liv` client's existing shape; `usage` rides along on success.
+export type LivChatSendResult =
+  | { ok: true; usage?: LivUsage }
+  | { ok: false; error?: { message?: string; detail?: string } }
+
 // The one identity knob. `accent` themes the avatar/active states to the hat's
 // space (Cash Stash gold, Tummyful terracotta …); everything else falls back to
 // the design-system defaults so a hat is a few lines, not a restyle.
@@ -66,7 +83,7 @@ export interface LivChatAdapter {
     send(
       args: { sessionId: string; text: string; files?: File[] },
       onChunk: (chunk: string) => void,
-    ): Promise<LivResult<unknown>>
+    ): Promise<LivChatSendResult>
   }
   attachments?: { signedUrl(path: string): Promise<string> }
   key?: {
@@ -86,6 +103,32 @@ const DEFAULT_MODELS: LivModel[] = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 · fastest / cheapest' },
 ]
 
+// Approximate Anthropic list prices, dollars PER TOKEN (list $/1M ÷ 1e6), keyed
+// by model family. Cache-write = 1.25× input and cache-read = 0.1× input are the
+// standard 5-minute-cache multipliers, so they're derived rather than stored.
+// Matched by family substring so a dated snapshot id (…-20251001) still resolves;
+// unknown models fall back to the Sonnet tier. Unlike Cash Stash's single flat
+// rate, this prices Haiku/Opus turns correctly — the meter is an estimate, not a bill.
+type Tier = { input: number; output: number }
+const PRICE_PER_TOKEN: Record<string, Tier> = {
+  opus: { input: 15 / 1e6, output: 75 / 1e6 },
+  sonnet: { input: 3 / 1e6, output: 15 / 1e6 },
+  haiku: { input: 1 / 1e6, output: 5 / 1e6 },
+}
+function tierFor(model?: string | null): Tier {
+  const id = (model || '').toLowerCase()
+  if (id.includes('opus')) return PRICE_PER_TOKEN.opus
+  if (id.includes('haiku')) return PRICE_PER_TOKEN.haiku
+  return PRICE_PER_TOKEN.sonnet
+}
+function usageCost(u: LivUsage, model?: string | null): number {
+  const t = tierFor(model)
+  return (u.input || 0) * t.input
+    + (u.output || 0) * t.output
+    + (u.cacheCreate || 0) * t.input * 1.25
+    + (u.cacheRead || 0) * t.input * 0.1
+}
+
 // A message's `attachments` can arrive as an array, a JSON string (jsonb), or be
 // missing — always coerce so `.map` never throws (the crash that took the whole
 // card down before the error boundary existed).
@@ -98,18 +141,14 @@ function attachmentsOf(m: LivMessage): LivAttachment[] {
   return []
 }
 
-// Single source of truth for turning a message's text into a session title —
-// shared by "type your first message with no session yet" (creates with this
-// title), the new-chat auto-title path (renames once the first message goes
-// out), and the one-time 'Untitled' backfill (renames on next load).
-function titleFromText(text?: string | null): string {
-  return (text || '').trim().slice(0, 48) || 'New chat'
-}
-// A session counts as still needing a title if it has none, or has the
-// literal placeholder the rail falls back to displaying.
-function isUntitled(title?: string | null): boolean {
-  const t = (title || '').trim()
-  return !t || t === 'Untitled'
+// A session's display title, with a friendly fallback while it's still being
+// named. Sessions are created untitled (title = null) and named server-side by
+// an intelligent one-line SUMMARY of the first exchange — never a raw echo of
+// the first message, and never left as "Untitled". Until that background title
+// lands (it arrives on the next session-list refresh), the rail shows this
+// neutral placeholder rather than a truncated copy of what was just typed.
+function displayTitle(title?: string | null): string {
+  return (title || '').trim() || 'New chat'
 }
 
 // ── Minimal inline icon set (stroke glyphs, inherit currentColor) ────────────
@@ -205,6 +244,18 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
   // Irrelevant above the 620px breakpoint, where the rail is always visible.
   const [railOpen, setRailOpen] = useState(false)
 
+  // Running token/cost total for this console (spans sessions), reset by tapping
+  // the meter. Cost is derived at render time from the current model's tier.
+  const [usage, setUsage] = useState<LivUsage>({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
+  function addUsage(u: LivUsage) {
+    setUsage((p) => ({
+      input: (p.input || 0) + (u.input || 0),
+      output: (p.output || 0) + (u.output || 0),
+      cacheCreate: (p.cacheCreate || 0) + (u.cacheCreate || 0),
+      cacheRead: (p.cacheRead || 0) + (u.cacheRead || 0),
+    }))
+  }
+
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
   const [showSettings, setShowSettings] = useState(false)
   const [keyInput, setKeyInput] = useState('')
@@ -271,26 +322,12 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
     } catch (e) { console.error('resolveUrls failed', e) }
   }
 
-  // One-time client-side backfill: sessions created before auto-titling
-  // shipped are stuck on 'Untitled' server-side forever unless something
-  // retitles them. Rather than a server-side bulk migration, retitle lazily —
-  // the first time we happen to load that session's messages — reusing the
-  // exact same derivation as the new-chat auto-title path below.
-  function backfillTitle(id: string, msgs: LivMessage[]) {
-    const s = sessions.find((x) => x.id === id)
-    if (!s || !isUntitled(s.title)) return
-    const first = msgs.find((m) => m.content && m.content.trim())
-    if (!first) return
-    adapter.sessions.rename(id, titleFromText(first.content)).then(() => loadSessions())
-      .catch((e) => console.error('title backfill failed', e))
-  }
-
   async function selectSession(id: string) {
     setActive(id); setMessages([]); setStreaming(''); setRailOpen(false)
     try {
       const r = await adapter.messages.list(id)
       if (activeIdRef.current !== id) return // superseded by a newer click — discard.
-      if (r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages); backfillTitle(id, r.value.messages) }
+      if (r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages) }
     } catch (e) {
       if (activeIdRef.current !== id) return
       console.error('messages.list failed', e)
@@ -327,22 +364,22 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
 
     let sessionId = activeId
     const stillActive = () => activeIdRef.current === sessionId
-    // Was the active session created via "+ New chat" (or otherwise never
-    // titled) and hasn't had a message yet? If so, this send is its first —
-    // auto-title it from the message text once it's on its way.
-    const activeSession = sessions.find((s) => s.id === sessionId)
-    const needsAutoTitle = !!sessionId && messages.length === 0 && isUntitled(activeSession?.title)
+    // The backend names an untitled session from the FIRST exchange; if this send
+    // is that first exchange, refresh the rail again shortly after so the smart
+    // title (generated in the background, server-side) appears without a reload.
+    const isFirstExchange = messages.length === 0
 
     try {
       if (!sessionId) {
-        const r = await adapter.sessions.create(titleFromText(text))
+        // Create the session UNTITLED. The backend names it from an intelligent
+        // summary of the first exchange (see displayTitle above); the title
+        // arrives on a later session-list refresh, so we never write a raw-echo
+        // title here that would pre-empt (and permanently win over) that summary.
+        const r = await adapter.sessions.create()
         if (!r.ok) { setMsg('Could not start a conversation.'); return }
         sessionId = r.value.id
         setActive(sessionId)
         await loadSessions()
-      } else if (needsAutoTitle && text) {
-        adapter.sessions.rename(sessionId, titleFromText(text)).then(() => loadSessions())
-          .catch((e) => console.error('auto-title rename failed', e))
       }
 
       const tmpId = `tmp-${Math.round(performance.now())}-${sessions.length}`
@@ -368,7 +405,12 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
 
       if (stillActive()) {
         setStreaming('')
-        if (!res.ok) {
+        if (res.ok) {
+          // Token + cost meter: accumulate this turn's usage (backend reports it
+          // on the stream's `done` event). Independent of which session is open —
+          // it's a running total for the console, reset by tapping the meter.
+          if (res.usage) addUsage(res.usage)
+        } else {
           const em = res.error?.message
           if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
             if (showKey) setShowSettings(true)
@@ -381,6 +423,8 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
       const r = await adapter.messages.list(sessionId)
       if (stillActive() && r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages) }
       loadSessions()
+      // Pick up the server-generated summary title for a brand-new thread.
+      if (isFirstExchange) setTimeout(() => { loadSessions() }, 2500)
     } catch (e: unknown) {
       console.error('chat send threw', e)
       if (stillActive()) {
@@ -412,7 +456,7 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
 
   // ── styles (inline, token-driven) ──
   const S = {
-    card: { background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, padding: space.md } as CSSProperties,
+    card: { background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, padding: space.md, boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' } as CSSProperties,
     head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.sm } as CSSProperties,
     muted: { ...textStyle('caption'), color: cssVar.mid } as CSSProperties,
     body: { display: 'grid', gridTemplateColumns: 'minmax(140px, 200px) 1fr', gap: space.md, marginTop: space.md, minHeight: 320 } as CSSProperties,
@@ -441,11 +485,30 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
     <section className="lc-root" style={{ ...S.card, ['--lc-accent' as string]: accent }}>
       <div style={S.head}>
         <h2 style={{ ...textStyle('h3'), margin: 0 }}>{hat.name}{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</h2>
-        {showKey && (
-          <button className="lc-iconbtn ds-btn" style={S.ghostBtn} onClick={() => setShowSettings((s) => !s)}>
-            {keyInfo.hasKey ? 'Brain' : 'Add key'}
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
+          {(() => {
+            const totalTok = (usage.input || 0) + (usage.output || 0)
+            if (totalTok <= 0) return null
+            const cost = usageCost(usage, keyInfo.model)
+            return (
+              <button
+                type="button"
+                className="lc-iconbtn"
+                title={`${totalTok.toLocaleString()} tokens this session total · estimated ${keyInfo.model || 'model'} list cost — tap to reset`}
+                onClick={() => setUsage({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })}
+                style={{ background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.sm, padding: '3px 7px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, lineHeight: 1.1 }}
+              >
+                <span style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>${cost.toFixed(4)}</span>
+                <span style={{ ...textStyle('overline'), color: cssVar.dim }}>{totalTok.toLocaleString()} tok</span>
+              </button>
+            )
+          })()}
+          {showKey && (
+            <button className="lc-iconbtn ds-btn" style={S.ghostBtn} onClick={() => setShowSettings((s) => !s)}>
+              {keyInfo.hasKey ? 'Brain' : 'Add key'}
+            </button>
+          )}
+        </div>
       </div>
       {hat.intro && <p style={{ ...S.muted, marginTop: 6 }}>{hat.intro}</p>}
 
@@ -491,7 +554,7 @@ export default function LivChat({ hat, adapter }: LivChatProps) {
                 ) : (
                   <>
                     <button style={S.sessionOpen} onClick={() => selectSession(s.id)}>
-                      <span style={S.sessionTitle}>{s.title || 'Untitled'}</span>
+                      <span style={S.sessionTitle}>{displayTitle(s.title)}</span>
                       <span style={{ color: cssVar.dim, lineHeight: 0 }} title={s.channel} aria-label={s.channel}><ChannelIcon channel={s.channel} /></span>
                     </button>
                     {confirmDeleteId === s.id ? (
