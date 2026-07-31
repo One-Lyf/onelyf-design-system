@@ -356,13 +356,15 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
     const title = renameDraft.trim()
     setRenaming(null)
     if (!title || title === (s.title || '')) return
-    await adapter.sessions.rename(s.id, title)
+    const r = await adapter.sessions.rename(s.id, title)
+    if (!r.ok) { setMsg(r.error?.message || 'Could not rename.'); return }
     loadSessions()
   }
 
   async function confirmDelete(s: LivSession) {
     setConfirmDeleteId(null)
-    await adapter.sessions.delete(s.id)
+    const r = await adapter.sessions.delete(s.id)
+    if (!r.ok) { setMsg(r.error?.message || 'Could not delete.'); return }
     if (activeId === s.id) { setActive(null); setMessages([]) }
     loadSessions()
   }
