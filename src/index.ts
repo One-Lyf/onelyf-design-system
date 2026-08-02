@@ -63,7 +63,7 @@ export {
   default as LivChat, livChatStylesheet,
   type LivChatProps, type LivHat, type LivChatAdapter,
   type LivMessage, type LivSession, type LivAttachment, type LivKeyInfo,
-  type LivModel, type LivResult,
+  type LivModel, type LivResult, type LivToolActivity,
 } from './components/LivChat'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
