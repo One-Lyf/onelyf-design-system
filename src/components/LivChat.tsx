@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
+import Glyph, { type GlyphVariant } from '../Glyph'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ export interface LivHat {
   enableAttachments?: boolean  // show the image attach control (default true)
   enableKey?: boolean          // show the bring-your-own-key settings (default true)
   models?: LivModel[]          // model choices for the key panel
+  glyph?: GlyphVariant         // brand mark shown in the header ('live' for Liv); omit for none
 }
 
 // Backend-agnostic data port. Its shape mirrors the federation `liv` client so an
@@ -543,7 +545,10 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
   return (
     <section className="lc-root" style={{ ...S.card, ['--lc-accent' as string]: accent }}>
       <div style={S.head}>
-        <h2 style={{ ...textStyle('h3'), margin: 0 }}>{hat.name}{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</h2>
+        <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
+          {hat.glyph && <Glyph variant={hat.glyph} size={22} />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{hat.name}{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
+        </h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {(() => {
             const totalTok = (usage.input || 0) + (usage.output || 0)
