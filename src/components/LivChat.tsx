@@ -35,6 +35,18 @@ export interface LivMessage {
 export interface LivKeyInfo { hasKey: boolean; model?: string | null }
 export interface LivModel { id: string; label: string }
 
+// A tool the assistant invokes mid-reply (web search, page fetch). The adapter
+// surfaces these through the same `onChunk` callback as text, so a chat can show
+// "Searching…" instead of a frozen caret while a tool round runs. Backward-
+// compatible: an adapter that only ever passes strings keeps working unchanged.
+export interface LivToolActivity {
+  type: 'tool'
+  phase: 'start' | 'end'
+  name: string            // e.g. 'web_search', 'fetch_url'
+  summary?: string        // human line from the `end` phase ("Searched: …")
+  ok?: boolean
+}
+
 // Per-turn token usage, as the backend reports it on the chat stream's `done`
 // event (Anthropic's native field names, flattened). Powers the token/cost
 // meter. All optional so an adapter that doesn't surface usage simply shows no
@@ -82,7 +94,10 @@ export interface LivChatAdapter {
   chat: {
     send(
       args: { sessionId: string; text: string; files?: File[] },
-      onChunk: (chunk: string) => void,
+      // A plain string is a text delta (appended to the streaming reply); a
+      // LivToolActivity is a tool round starting/ending. Widened from
+      // `string`-only, so existing text-only adapters are unaffected.
+      onChunk: (chunk: string | LivToolActivity) => void,
     ): Promise<LivChatSendResult>
   }
   attachments?: { signedUrl(path: string): Promise<string> }
@@ -164,6 +179,8 @@ const PhoneI = () => <svg {...svg}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 1
 const SmartphoneI = () => <svg {...svg}><rect x="7" y="2" width="10" height="20" rx="2" /><line x1="11" y1="18" x2="13" y2="18" /></svg>
 const MessageI = () => <svg {...svg}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
 const ImageI = () => <svg {...svg}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+const SearchI = () => <svg {...svg}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+const GlobeI = () => <svg {...svg}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
 const PaperclipI = () => <svg {...svg}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
 const PencilI = () => <svg {...svg}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
 const TrashI = () => <svg {...svg}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
@@ -192,12 +209,36 @@ function ModalityPill({ modality }: { modality?: string }) {
   )
 }
 
+// The "Liv is doing something" line shown while a tool round runs, in place of a
+// caret with no text behind it. Maps the tool name to a human verb; the `end`
+// phase's summary is never shown here (the activity clears on end), so this only
+// renders the in-flight `start`.
+function ToolActivityLine({ activity }: { activity: LivToolActivity }) {
+  const label = activity.name === 'web_search' ? 'Searching the web'
+    : activity.name === 'fetch_url' ? 'Reading a page'
+    : 'Working'
+  const Icon = activity.name === 'fetch_url' ? GlobeI : SearchI
+  return (
+    <div className="lc-tool" style={{
+      ...textStyle('caption'), display: 'inline-flex', alignItems: 'center', gap: 6,
+      color: cssVar.mid, padding: '2px 8px', borderRadius: radius.pill,
+      background: cssVar.track, marginBottom: 4,
+    }}>
+      <Icon /><span>{label}<span className="lc-ellipsis" aria-hidden="true">…</span></span>
+    </div>
+  )
+}
+
 // Interaction/animation CSS that inline styles can't express. Apps inject this
 // once (alongside themeStylesheet + componentStylesheet), same pattern as the
 // rest of the design system.
 export const livChatStylesheet = `
 .lc-caret { animation: lc-blink 1s step-end infinite; }
 @keyframes lc-blink { 50% { opacity: 0; } }
+.lc-tool { animation: lc-fade-in .18s ease; }
+@keyframes lc-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.lc-ellipsis { animation: lc-pulse 1.2s ease-in-out infinite; }
+@keyframes lc-pulse { 50% { opacity: .3; } }
 .lc-session:hover { background: var(--ds-surface-hi); }
 .lc-session[data-active="true"] { background: color-mix(in srgb, var(--lc-accent) 14%, transparent); }
 .lc-iconbtn:hover:not(:disabled) { background: var(--ds-track); }
@@ -237,6 +278,9 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [streaming, setStreaming] = useState('')
+  // The tool round currently running, shown as an activity line above the
+  // streaming text. Null when no tool is mid-flight.
+  const [toolActivity, setToolActivity] = useState<LivToolActivity | null>(null)
   const [sending, setSending] = useState(false)
   const [msg, setMsg] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -408,15 +452,18 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
       setDraft(''); setFiles([])
       if (fileRef.current) fileRef.current.value = ''
 
-      if (stillActive()) setStreaming('')
+      if (stillActive()) { setStreaming(''); setToolActivity(null) }
       let acc = ''
       const res = await adapter.chat.send({ sessionId, text, files: sentFiles }, (chunk) => {
-        acc += chunk
-        if (stillActive()) setStreaming(acc)
+        if (!stillActive()) return
+        if (typeof chunk === 'string') { acc += chunk; setStreaming(acc) }
+        // A tool starting shows the activity line; its end clears it (the next
+        // text delta or another tool's start takes over from here).
+        else setToolActivity(chunk.phase === 'end' ? null : chunk)
       })
 
       if (stillActive()) {
-        setStreaming('')
+        setStreaming(''); setToolActivity(null)
         if (res.ok) {
           // Token + cost meter: accumulate this turn's usage (backend reports it
           // on the stream's `done` event). Independent of which session is open —
@@ -440,7 +487,7 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
     } catch (e: unknown) {
       console.error('chat send threw', e)
       if (stillActive()) {
-        setStreaming('')
+        setStreaming(''); setToolActivity(null)
         setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
       }
     } finally { setSending(false) }
@@ -615,13 +662,18 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
                 {m.content && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.content}</div>}
               </div>
             ))}
-            {streaming && (
+            {(streaming || toolActivity) && (
               <div className="lc-bubble" style={bubbleStyle('liv')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{hat.name}</span>
                   <ModalityPill modality="text" />
                 </div>
-                <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{streaming}<span className="lc-caret">▍</span></div>
+                {toolActivity && <ToolActivityLine activity={toolActivity} />}
+                {/* The caret only trails live text; while a tool runs (no text yet)
+                    the activity line above carries the "working" signal instead. */}
+                {streaming && (
+                  <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{streaming}<span className="lc-caret">▍</span></div>
+                )}
               </div>
             )}
           </div>
