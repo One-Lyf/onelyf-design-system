@@ -116,6 +116,11 @@ export interface LivChatProps {
   // (e.g. a persistent LivDock/bubble) — it drives the launcher's unread dot + thinking pulse.
   // Omitted by inline hosts that don't need it.
   onState?: (s: { messageCount: number; thinking: boolean }) => void
+  // Optional dock controls. When a host floats this chat in a bubble/panel it passes these to
+  // render a chevron-down (minimize) and X (close) in THIS header — so the card has one header
+  // with its controls, not a separate dock chrome bar stacked on top. Omit for an inline host.
+  onMinimize?: () => void
+  onClose?: () => void
 }
 
 const DEFAULT_MODELS: LivModel[] = [
@@ -182,6 +187,8 @@ const SmartphoneI = () => <svg {...svg}><rect x="7" y="2" width="10" height="20"
 const MessageI = () => <svg {...svg}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
 const ImageI = () => <svg {...svg}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
 const SearchI = () => <svg {...svg}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+const ChevronDownI = () => <svg {...svg}><path d="M6 9l6 6 6-6" /></svg>
+const CloseI = () => <svg {...svg}><path d="M18 6L6 18M6 6l12 12" /></svg>
 const GlobeI = () => <svg {...svg}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
 const PaperclipI = () => <svg {...svg}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
 const PencilI = () => <svg {...svg}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -267,7 +274,7 @@ export const livChatStylesheet = `
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -571,6 +578,14 @@ export default function LivChat({ hat, adapter, onState }: LivChatProps) {
             <button className="lc-iconbtn ds-btn" style={S.ghostBtn} onClick={() => setShowSettings((s) => !s)}>
               {keyInfo.hasKey ? 'Brain' : 'Add key'}
             </button>
+          )}
+          {/* Dock controls — only when a floating host supplies them. Chevron-down collapses
+              back to the launcher (conversation kept); X dismisses. */}
+          {onMinimize && (
+            <button type="button" className="lc-iconbtn" style={S.iconbtn} onClick={onMinimize} title="Minimize" aria-label="Minimize Liv"><ChevronDownI /></button>
+          )}
+          {onClose && (
+            <button type="button" className="lc-iconbtn" style={S.iconbtn} onClick={onClose} title="Close" aria-label="Close Liv"><CloseI /></button>
           )}
         </div>
       </div>
