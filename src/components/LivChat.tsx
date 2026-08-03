@@ -407,7 +407,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
 
   async function newSession() {
     const r = await adapter.sessions.create()
-    if (r.ok) { await loadSessions(); selectSession(r.value.id) }
+    // Mirrors the rename/delete failure handling below (#22) — a failed create
+    // used to be swallowed silently, so "+ New chat" would appear to just do
+    // nothing with no feedback. Surface it the same way.
+    if (!r.ok) { setMsg(r.error?.message || 'Could not start a new chat.'); return }
+    await loadSessions(); selectSession(r.value.id)
   }
 
   function startRename(s: LivSession) { setConfirmDeleteId(null); setRenaming(s.id); setRenameDraft(s.title || '') }
