@@ -29,6 +29,10 @@ export {
 // shared :hover / :focus-visible / :disabled states.
 export { componentStylesheet } from './styles'
 
+// Base stylesheet — global serif headings, tabular numerals, and semantic status
+// washes. The "premium feel" layer both flagship apps share. Inject once too.
+export { baseStylesheet } from './base'
+
 // Theme runtime — CSS-variable tokens + light/dark/system mode state
 export {
   cssVar,
