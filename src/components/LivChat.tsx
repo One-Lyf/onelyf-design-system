@@ -749,7 +749,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                   <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
                 </>
               )}
-              {adapter.key && models.length > 1 && (
+              {/* Gated on showKey (not just adapter.key) — this selector persists the
+                  model choice via adapter.key.set(), so it's part of the bring-your-own-key
+                  settings the `enableKey` flag controls. A hat that sets enableKey: false
+                  to hide that surface (see the Brain/Add-key button + settings panel above)
+                  had it reappear here regardless, letting a user silently change the saved
+                  model through a control the hat explicitly opted out of. */}
+              {showKey && models.length > 1 && (
                 <select
                   className="ds-input"
                   style={{ ...textStyle('caption'), color: accent, background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.pill, padding: '4px 8px', cursor: 'pointer', maxWidth: 150 }}
