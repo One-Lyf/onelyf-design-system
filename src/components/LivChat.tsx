@@ -77,8 +77,15 @@ export interface LivHat {
   intro?: string               // muted blurb under the header
   enableAttachments?: boolean  // show the image attach control (default true)
   enableKey?: boolean          // show the bring-your-own-key settings (default true)
-  models?: LivModel[]          // model choices for the key panel
+  models?: LivModel[]          // model choices for the key panel + inline composer selector
   glyph?: GlyphVariant         // brand mark shown in the header ('live' for Liv); omit for none
+  // ── Open branding layer ────────────────────────────────────────────────────
+  // The structure/navigation is identical across every app; a hat overrides
+  // whatever expresses that app's identity. All optional — omit for the shared
+  // Liv defaults. (e.g. Tummyful's "Commis" wears kitchen framing + chef pills.)
+  description?: string         // empty-state blurb under "Ask {name}"
+  pills?: string[]             // capability pills in the empty state
+  suggestions?: string[]      // starter prompts (chips) shown when the thread is empty
 }
 
 // Backend-agnostic data port. Its shape mirrors the federation `liv` client so an
@@ -189,8 +196,9 @@ const ImageI = () => <svg {...svg}><rect x="3" y="3" width="18" height="18" rx="
 const SearchI = () => <svg {...svg}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
 const ChevronDownI = () => <svg {...svg}><path d="M6 9l6 6 6-6" /></svg>
 const CloseI = () => <svg {...svg}><path d="M18 6L6 18M6 6l12 12" /></svg>
+const PlusI = () => <svg {...svg}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+const ArrowUpI = () => <svg {...svg}><line x1="12" y1="19" x2="12" y2="5" /><path d="M5 12l7-7 7 7" /></svg>
 const GlobeI = () => <svg {...svg}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-const PaperclipI = () => <svg {...svg}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
 const PencilI = () => <svg {...svg}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
 const TrashI = () => <svg {...svg}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 const CopyI = () => <svg {...svg}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
@@ -657,7 +665,28 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
         <div style={S.main}>
           <div className="lc-transcript" ref={transcriptRef} style={S.transcript}>
             {messages.length === 0 && !streaming && (
-              <p style={{ ...S.muted, textAlign: 'center', marginTop: space.lg }}>{hat.emptyText || `Say something to ${hat.name}${showAttach ? ' — or attach an image' : ''}.`}</p>
+              <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
+                {hat.glyph && <Glyph variant={hat.glyph} size={64} />}
+                <h3 style={{ ...textStyle('h2'), margin: 0 }}>Ask {hat.name}</h3>
+                {(hat.description || hat.emptyText) && (
+                  <p style={{ ...S.muted, margin: 0 }}>{hat.description || hat.emptyText}</p>
+                )}
+                {hat.pills && hat.pills.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 2 }}>
+                    {hat.pills.map((p, i) => (
+                      <span key={i} style={{ ...textStyle('caption'), border: `1px solid ${accent}`, color: accent, borderRadius: radius.pill, padding: '3px 10px' }}>{p}</span>
+                    ))}
+                  </div>
+                )}
+                {hat.suggestions && hat.suggestions.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: space.xs }}>
+                    {hat.suggestions.slice(0, 4).map((sug, i) => (
+                      <button key={i} type="button" className="ds-btn ds-btn--ghost" style={{ ...S.ghostBtn, ...textStyle('caption'), padding: '6px 10px', textAlign: 'left' }}
+                        onClick={() => setDraft(sug)}>{sug}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {messages.map((m) => (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
@@ -706,21 +735,45 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                 ))}
               </div>
             )}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
+              placeholder={hat.placeholder || `Message ${hat.name}…`}
+              value={draft} onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+              rows={1} />
+            {/* Toolbar row (Commis parity): attach + inline model on the left, send circle on the
+                right. Voice controls (mic / hands-free) land here next, gated on adapter capability. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
               {showAttach && adapter.attachments && (
                 <>
-                  <button className="lc-iconbtn" style={{ ...S.ghostBtn, padding: '8px 10px' }} title="Attach image" onClick={() => fileRef.current?.click()}><PaperclipI /></button>
+                  <button className="lc-iconbtn" style={S.iconbtn} title="Attach image" aria-label="Attach image" onClick={() => fileRef.current?.click()}><PlusI /></button>
                   <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
                 </>
               )}
-              <textarea className="ds-input" style={{ ...S.input, flex: 1, resize: 'vertical', minHeight: 38, maxHeight: 160 }}
-                placeholder={hat.placeholder || `Message ${hat.name}…`}
-                value={draft} onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                rows={1} />
-              <button className="ds-btn" style={{ ...S.primaryBtn, opacity: (sending || (!draft.trim() && files.length === 0)) ? 0.5 : 1 }}
+              {adapter.key && models.length > 1 && (
+                <select
+                  className="ds-input"
+                  style={{ ...textStyle('caption'), color: accent, background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.pill, padding: '4px 8px', cursor: 'pointer', maxWidth: 150 }}
+                  title="Model"
+                  value={keyInfo.model || modelInput}
+                  onChange={async (e) => {
+                    const id = e.target.value
+                    setModelInput(id)
+                    const r = await adapter.key!.set({ model: id })
+                    if (r.ok) setKeyInfo((k) => ({ ...k, model: id }))
+                  }}
+                >
+                  {models.map((m) => <option key={m.id} value={m.id}>{m.label.split('·')[0].trim()}</option>)}
+                </select>
+              )}
+              <div style={{ flex: 1 }} />
+              <button
+                className="ds-btn"
+                style={{ ...S.primaryBtn, width: 40, height: 40, borderRadius: '50%', padding: 0, display: 'grid', placeItems: 'center',
+                  background: `linear-gradient(180deg, ${accent}, ${cssVar.primaryDeep})`,
+                  opacity: (sending || (!draft.trim() && files.length === 0)) ? 0.5 : 1 }}
+                title="Send" aria-label="Send"
                 disabled={sending || (!draft.trim() && files.length === 0)} onClick={send}>
-                {sending ? '…' : 'Send'}
+                {sending ? '…' : <ArrowUpI />}
               </button>
             </div>
           </div>
