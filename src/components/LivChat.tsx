@@ -114,6 +114,14 @@ export interface LivChatAdapter {
     get(): Promise<LivResult<LivKeyInfo>>
     set(patch: { apiKey?: string; model?: string }): Promise<LivResult<LivKeyInfo>>
   }
+  // Optional voice capability. When present, the Hands-free toggle reads Liv's replies aloud
+  // through the app's own voice (e.g. Google TTS + FX). When absent, Hands-free falls back to the
+  // browser's speechSynthesis, so voice-out works everywhere; the mic (speech-in) is always
+  // browser-native and gated only on SpeechRecognition support.
+  voice?: {
+    speak(text: string): Promise<void>
+    stop?(): void
+  }
 }
 
 export interface LivChatProps {
@@ -188,6 +196,7 @@ function displayTitle(title?: string | null): string {
 const ic: CSSProperties = { width: 14, height: 14, display: 'inline-block', verticalAlign: '-2px' }
 const svg = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, style: ic, 'aria-hidden': true }
 const MicI = () => <svg {...svg}><rect x="9" y="2" width="6" height="11" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="19" x2="12" y2="22" /></svg>
+const SpeakerI = () => <svg {...svg}><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M18.5 5.5a9 9 0 0 1 0 13" /></svg>
 const KeyboardI = () => <svg {...svg}><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="6" y1="13" x2="18" y2="13" /><line x1="6" y1="9" x2="6.01" y2="9" /><line x1="18" y1="9" x2="18.01" y2="9" /></svg>
 const PhoneI = () => <svg {...svg}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
 const SmartphoneI = () => <svg {...svg}><rect x="7" y="2" width="10" height="20" rx="2" /><line x1="11" y1="18" x2="13" y2="18" /></svg>
@@ -280,6 +289,16 @@ export const livChatStylesheet = `
 }
 `
 
+// Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
+// bits the mic uses. Cast the vendor-prefixed constructor to this when dictation is available.
+interface SpeechRecResult { readonly isFinal: boolean; readonly 0: { readonly transcript: string } }
+interface SpeechRecEvent { readonly resultIndex: number; readonly results: ArrayLike<SpeechRecResult> }
+interface SpeechRec {
+  lang: string; interimResults: boolean; continuous: boolean
+  onresult: (e: SpeechRecEvent) => void; onend: () => void; onerror: () => void
+  start(): void; stop(): void
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: LivChatProps) {
@@ -308,6 +327,16 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
   // overlay sheet (see .lc-rail-toggle / .lc-rail in livChatStylesheet).
   // Irrelevant above the 620px breakpoint, where the rail is always visible.
   const [railOpen, setRailOpen] = useState(false)
+
+  // Voice. handsFree reads Liv's replies aloud (app voice via adapter.voice, else the browser's
+  // speechSynthesis). The mic dictates into the composer via the browser SpeechRecognition API —
+  // shown only where that's supported. Both live in the composer toolbar.
+  const [handsFree, setHandsFree] = useState(false)
+  const [listening, setListening] = useState(false)
+  const recognitionRef = useRef<{ stop: () => void } | null>(null)
+  const speechInSupported = typeof window !== 'undefined' &&
+    !!((window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+       (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition)
 
   // Running token/cost total for this console (spans sessions), reset by tapping
   // the meter. Cost is derived at render time from the current model's tier.
@@ -490,6 +519,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
           // on the stream's `done` event). Independent of which session is open —
           // it's a running total for the console, reset by tapping the meter.
           if (res.usage) addUsage(res.usage)
+          // Hands-free: read the reply aloud (app voice, else browser TTS).
+          if (handsFree && acc.trim()) speak(acc)
         } else {
           const em = res.error?.message
           if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
@@ -512,6 +543,44 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
         setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
       }
     } finally { setSending(false) }
+  }
+
+  // Read text aloud: the app's own voice if it supplies one, else the browser's speechSynthesis.
+  async function speak(text: string) {
+    if (!text.trim()) return
+    try {
+      if (adapter.voice?.speak) { await adapter.voice.speak(text); return }
+      const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined
+      if (synth) { synth.cancel(); synth.speak(new SpeechSynthesisUtterance(text)) }
+    } catch (e) { console.error('speak failed', e) }
+  }
+  function stopSpeaking() {
+    adapter.voice?.stop?.()
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel()
+  }
+  // Browser dictation into the composer. Interim results stream in; final text appends to the draft.
+  function toggleMic() {
+    if (listening) { recognitionRef.current?.stop(); return }
+    const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec }
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition
+    if (!Ctor) return
+    const rec = new Ctor()
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false
+    let finalText = draft
+    rec.onresult = (e: SpeechRecEvent) => {
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript
+        if (e.results[i].isFinal) finalText = (finalText ? finalText + ' ' : '') + t
+        else interim += t
+      }
+      setDraft((finalText + (interim ? ' ' + interim : '')).trim())
+    }
+    rec.onend = () => { setListening(false); recognitionRef.current = null }
+    rec.onerror = () => { setListening(false); recognitionRef.current = null }
+    recognitionRef.current = rec
+    setListening(true)
+    rec.start()
   }
 
   async function copyMessage(id: string, text?: string | null) {
@@ -629,7 +698,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
           aria-expanded={railOpen}
           onClick={() => setRailOpen((o) => !o)}
         >
-          <MenuI /> Sessions{sessions.length ? ` (${sessions.length})` : ''}
+          <MenuI /> History{sessions.length ? ` (${sessions.length})` : ''}
         </button>
         <aside className="lc-rail" data-open={railOpen} style={S.rail}>
           <button className="ds-btn" style={{ ...S.ghostBtn, width: '100%' }} onClick={newSession}>+ New chat</button>
@@ -774,6 +843,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                 >
                   {models.map((m) => <option key={m.id} value={m.id}>{m.label.split('·')[0].trim()}</option>)}
                 </select>
+              )}
+              {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
+                  dictation (only where the browser supports speech-in). */}
+              <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: handsFree ? accent : cssVar.mid }}
+                title="Hands-free — read replies aloud" aria-pressed={handsFree}
+                onClick={() => setHandsFree((v) => { const next = !v; if (!next) stopSpeaking(); return next })}><SpeakerI /></button>
+              {speechInSupported && (
+                <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: listening ? cssVar.danger : cssVar.mid }}
+                  title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}><MicI /></button>
               )}
               <div style={{ flex: 1 }} />
               <button
