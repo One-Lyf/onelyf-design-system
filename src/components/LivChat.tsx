@@ -12,7 +12,7 @@
 // state write is guarded by an activeId ref so a slow reply for session A can
 // never paint over session B.
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
@@ -86,6 +86,8 @@ export interface LivHat {
   description?: string         // empty-state blurb under "Ask {name}"
   pills?: string[]             // capability pills in the empty state
   suggestions?: string[]      // starter prompts (chips) shown when the thread is empty
+  toolIcon?: ReactNode         // brand icon for THIS app's own tool calls (e.g. Tummyful's chef's
+                               // knife); web search/fetch keep their universal icons.
 }
 
 // Backend-agnostic data port. Its shape mirrors the federation `liv` client so an
@@ -208,6 +210,7 @@ const CloseI = () => <svg {...svg}><path d="M18 6L6 18M6 6l12 12" /></svg>
 const PlusI = () => <svg {...svg}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
 const ArrowUpI = () => <svg {...svg}><line x1="12" y1="19" x2="12" y2="5" /><path d="M5 12l7-7 7 7" /></svg>
 const GlobeI = () => <svg {...svg}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+const ToolI = () => <svg {...svg}><path d="M14.7 6.3a4 4 0 0 0-5.4 5.3L3 18l3 3 6.4-6.3a4 4 0 0 0 5.3-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
 const PencilI = () => <svg {...svg}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
 const TrashI = () => <svg {...svg}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 const CopyI = () => <svg {...svg}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
@@ -239,18 +242,21 @@ function ModalityPill({ modality }: { modality?: string }) {
 // caret with no text behind it. Maps the tool name to a human verb; the `end`
 // phase's summary is never shown here (the activity clears on end), so this only
 // renders the in-flight `start`.
-function ToolActivityLine({ activity }: { activity: LivToolActivity }) {
+function ToolActivityLine({ activity, brandIcon }: { activity: LivToolActivity; brandIcon?: ReactNode }) {
+  const isWeb = activity.name === 'web_search' || activity.name === 'fetch_url'
   const label = activity.name === 'web_search' ? 'Searching the web'
     : activity.name === 'fetch_url' ? 'Reading a page'
     : 'Working'
-  const Icon = activity.name === 'fetch_url' ? GlobeI : SearchI
+  // Web search/fetch keep their universal icons; the app's own tools show the hat's brand icon
+  // (e.g. a chef's knife) when supplied, else a generic tool glyph.
+  const icon = isWeb ? (activity.name === 'fetch_url' ? <GlobeI /> : <SearchI />) : (brandIcon ?? <ToolI />)
   return (
     <div className="lc-tool" style={{
       ...textStyle('caption'), display: 'inline-flex', alignItems: 'center', gap: 6,
       color: cssVar.mid, padding: '2px 8px', borderRadius: radius.pill,
       background: cssVar.track, marginBottom: 4,
     }}>
-      <Icon /><span>{label}<span className="lc-ellipsis" aria-hidden="true">…</span></span>
+      {icon}<span>{label}<span className="lc-ellipsis" aria-hidden="true">…</span></span>
     </div>
   )
 }
@@ -790,7 +796,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                   <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{hat.name}</span>
                   <ModalityPill modality="text" />
                 </div>
-                {toolActivity && <ToolActivityLine activity={toolActivity} />}
+                {toolActivity && <ToolActivityLine activity={toolActivity} brandIcon={hat.toolIcon} />}
                 {/* The caret only trails live text; while a tool runs (no text yet)
                     the activity line above carries the "working" signal instead. */}
                 {streaming && (
