@@ -415,6 +415,16 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
     if (el) el.scrollTop = el.scrollHeight
   }, [messages, streaming])
 
+  // Stop any live mic dictation / TTS playback when this chat unmounts (e.g. its
+  // host closes the panel) — otherwise the hot mic keeps listening and any
+  // in-progress speech keeps talking after the UI is gone.
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop()
+      stopSpeaking()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function resolveUrls(msgs: LivMessage[]) {
     if (!adapter.attachments) return
     try {
