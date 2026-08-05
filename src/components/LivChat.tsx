@@ -844,7 +844,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                     const id = e.target.value
                     setModelInput(id)
                     const r = await adapter.key!.set({ model: id })
+                    // Same failure-surfacing this file already applies to rename/delete (#22) and
+                    // new-chat creation (#29) — a failed save used to be swallowed here, so picking
+                    // a model from this selector would silently revert with no explanation.
                     if (r.ok) setKeyInfo((k) => ({ ...k, model: id }))
+                    else setMsg(r.error?.message || 'Could not switch model.')
                   }}
                 >
                   {models.map((m) => <option key={m.id} value={m.id}>{m.label.split('·')[0].trim()}</option>)}
