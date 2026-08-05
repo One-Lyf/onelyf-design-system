@@ -539,6 +539,20 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
       }
       const r = await adapter.messages.list(sessionId)
       if (stillActive() && r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages) }
+      // The server-confirmed message(s) just replaced the optimistic one above, so
+      // its local blob preview URL(s) are no longer referenced anywhere — revoke
+      // them instead of leaking them for the life of the session.
+      if (sentFiles.length) {
+        setUrls((u) => {
+          const next = { ...u }
+          let changed = false
+          sentFiles.forEach((_, i) => {
+            const p = localPath(i)
+            if (next[p]) { URL.revokeObjectURL(next[p]); delete next[p]; changed = true }
+          })
+          return changed ? next : u
+        })
+      }
       loadSessions()
       // Pick up the server-generated summary title for a brand-new thread.
       if (isFirstExchange) setTimeout(() => { loadSessions() }, 2500)
