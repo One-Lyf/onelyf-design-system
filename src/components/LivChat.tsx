@@ -340,6 +340,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
   const [handsFree, setHandsFree] = useState(false)
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
+  // Lets toggleMic's onresult closure notice when `draft` changed for a reason other than its
+  // own last write (the user typed while dictating, or send() cleared the composer) so it can
+  // rebase onto that instead of silently stomping it on the next speech result.
+  const draftRef = useRef('')
+  useEffect(() => { draftRef.current = draft }, [draft])
   const speechInSupported = typeof window !== 'undefined' &&
     !!((window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
        (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition)
@@ -572,15 +577,27 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
     if (!Ctor) return
     const rec = new Ctor()
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = false
-    let finalText = draft
+    let base = draft // whatever was already in the composer when dictation started
+    let sessionFinal = '' // finalized speech accumulated since the last rebase below
+    let lastWritten = draft // what WE last wrote, to detect external changes to draft
     rec.onresult = (e: SpeechRecEvent) => {
+      if (draftRef.current !== lastWritten) {
+        // The composer changed for a reason other than our own last write (typed manually
+        // while listening, or cleared by send()) — respect it as the new base instead of
+        // overwriting it with our stale accumulator on this result.
+        base = draftRef.current
+        sessionFinal = ''
+      }
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript
-        if (e.results[i].isFinal) finalText = (finalText ? finalText + ' ' : '') + t
+        if (e.results[i].isFinal) sessionFinal = (sessionFinal ? sessionFinal + ' ' : '') + t
         else interim += t
       }
-      setDraft((finalText + (interim ? ' ' + interim : '')).trim())
+      const dictated = sessionFinal + (interim ? (sessionFinal ? ' ' : '') + interim : '')
+      const next = ((base && dictated ? base + ' ' : base) + dictated).trim()
+      lastWritten = next
+      setDraft(next)
     }
     rec.onend = () => { setListening(false); recognitionRef.current = null }
     rec.onerror = () => { setListening(false); recognitionRef.current = null }
