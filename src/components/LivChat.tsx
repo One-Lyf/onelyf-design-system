@@ -88,6 +88,13 @@ export interface LivHat {
   suggestions?: string[]      // starter prompts (chips) shown when the thread is empty
   toolIcon?: ReactNode         // brand icon for THIS app's own tool calls (e.g. Tummyful's chef's
                                // knife); web search/fetch keep their universal icons.
+  // Human labels for THIS hat's own tool calls, keyed by the tool name the backend
+  // emits on the stream (LivToolActivity.name). Complements `toolIcon`: the icon
+  // is one glyph for all app tools; this map picks the per-tool phrasing so the
+  // in-flight line reads "Writing your recipe…" instead of a generic "Working…".
+  // Falls through to the built-in web_search/fetch_url defaults for those two, and
+  // to "Working" for any unmapped tool name.
+  toolLabels?: Record<string, string>
 }
 
 // Backend-agnostic data port. Its shape mirrors the federation `liv` client so an
@@ -110,6 +117,13 @@ export interface LivChatAdapter {
       // `string`-only, so existing text-only adapters are unaffected.
       onChunk: (chunk: string | LivToolActivity) => void,
     ): Promise<LivChatSendResult>
+    // Optional cancel port. When present, LivChat renders a Stop button in the streaming bubble
+    // and auto-invokes on a mid-send session switch — so a slow reply for the just-abandoned
+    // session stops burning tokens instead of running to completion behind the scenes. The
+    // adapter's send() should catch its own AbortError and resolve; LivChat treats the
+    // user-cancelled case silently (no error banner). Backward compatible: an adapter without
+    // abort() gets the old behavior (no Stop button, no auto-cancel — same as before).
+    abort?(): void
   }
   attachments?: { signedUrl(path: string): Promise<string> }
   key?: {
@@ -241,12 +255,17 @@ function ModalityPill({ modality }: { modality?: string }) {
 // The "Liv is doing something" line shown while a tool round runs, in place of a
 // caret with no text behind it. Maps the tool name to a human verb; the `end`
 // phase's summary is never shown here (the activity clears on end), so this only
-// renders the in-flight `start`.
-function ToolActivityLine({ activity, brandIcon }: { activity: LivToolActivity; brandIcon?: ReactNode }) {
+// renders the in-flight `start`. A hat's `toolLabels` map wins when the tool name
+// is in it — so an app can name its own tools ("Writing your recipe…") without
+// forking this file; unmapped names fall back to the web-search/fetch defaults and
+// then to a generic "Working…".
+function ToolActivityLine({ activity, brandIcon, labels }: { activity: LivToolActivity; brandIcon?: ReactNode; labels?: Record<string, string> }) {
   const isWeb = activity.name === 'web_search' || activity.name === 'fetch_url'
-  const label = activity.name === 'web_search' ? 'Searching the web'
-    : activity.name === 'fetch_url' ? 'Reading a page'
-    : 'Working'
+  const hatLabel = labels?.[activity.name]
+  const label = hatLabel
+    || (activity.name === 'web_search' ? 'Searching the web'
+      : activity.name === 'fetch_url' ? 'Reading a page'
+      : 'Working')
   // Web search/fetch keep their universal icons; the app's own tools show the hat's brand icon
   // (e.g. a chef's knife) when supplied, else a generic tool glyph.
   const icon = isWeb ? (activity.name === 'fetch_url' ? <GlobeI /> : <SearchI />) : (brandIcon ?? <ToolI />)
@@ -369,6 +388,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
   const activeIdRef = useRef<string | null>(null)
   function setActive(id: string | null) { activeIdRef.current = id; setActiveId(id) }
 
+  // Flipped true by the Stop button (or by an auto-abort on session switch mid-send) so the
+  // catch/error clauses in send() know a subsequent failure is user-initiated and shouldn't
+  // paint an error banner. Reset at the start of every new send.
+  const userAbortedRef = useRef(false)
+
   // Mirrors renamingId synchronously, same reasoning as activeIdRef above.
   // Committing (Enter) or cancelling (Escape) a rename calls setRenamingId(null),
   // which unmounts the rename <input> on the next render — and browsers fire a
@@ -428,7 +452,24 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
     } catch (e) { console.error('resolveUrls failed', e) }
   }
 
+  // Cancel the in-flight reply (user tap on Stop, or triggered internally on mid-send session
+  // switch). No-op when nothing is sending or the adapter doesn't expose an abort port; safe to
+  // call redundantly. Marks the abort as user-initiated so the send()'s catch/error handling
+  // stays silent instead of painting "Something went wrong".
+  function stop() {
+    if (!sending || !adapter.chat.abort) return
+    userAbortedRef.current = true
+    try { adapter.chat.abort() } catch (e) { console.error('adapter.chat.abort threw', e) }
+  }
+
   async function selectSession(id: string) {
+    // A slow reply for the just-abandoned session would otherwise keep streaming (and burning
+    // tokens) even though its chunks are already ignored via activeIdRef. Cancel it here so the
+    // network call actually stops. Silent — the user chose to move on, they don't need a banner.
+    if (sending && adapter.chat.abort) {
+      userAbortedRef.current = true
+      try { adapter.chat.abort() } catch (e) { console.error('adapter.chat.abort threw', e) }
+    }
     setActive(id); setMessages([]); setStreaming(''); setRailOpen(false)
     try {
       const r = await adapter.messages.list(id)
@@ -472,6 +513,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
   async function send() {
     const text = draft.trim()
     if ((!text && files.length === 0) || sending) return
+    // Fresh send — any prior abort flag from an earlier turn is stale, don't let it silence
+    // a legitimate error this turn.
+    userAbortedRef.current = false
     setSending(true); setMsg('')
 
     let sessionId = activeId
@@ -527,7 +571,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
           if (res.usage) addUsage(res.usage)
           // Hands-free: read the reply aloud (app voice, else browser TTS).
           if (handsFree && acc.trim()) speak(acc)
-        } else {
+        } else if (!userAbortedRef.current) {
+          // Suppress this branch entirely on a user-initiated Stop — the message shape can vary
+          // per adapter (some resolve with {ok:false, error:{message:'ABORT'}} instead of throwing),
+          // and painting a "couldn't reply" banner for something the user just told us to cancel
+          // reads as a failure they didn't cause.
           const em = res.error?.message
           if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
             if (showKey) setShowSettings(true)
@@ -543,10 +591,14 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
       // Pick up the server-generated summary title for a brand-new thread.
       if (isFirstExchange) setTimeout(() => { loadSessions() }, 2500)
     } catch (e: unknown) {
-      console.error('chat send threw', e)
+      // Native DOMException from a fetch abort has name === 'AbortError'; some adapters wrap and
+      // re-throw with their own shape. `userAbortedRef` is the reliable signal — set BY the code
+      // that called abort() — so we don't have to enumerate every adapter's abort-error variant.
+      const aborted = userAbortedRef.current || (e as Error)?.name === 'AbortError'
+      if (!aborted) console.error('chat send threw', e)
       if (stillActive()) {
         setStreaming(''); setToolActivity(null)
-        setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
+        if (!aborted) setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
       }
     } finally { setSending(false) }
   }
@@ -795,8 +847,24 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{hat.name}</span>
                   <ModalityPill modality="text" />
+                  {/* Stop — only when the adapter exposes an abort port; a click cancels the
+                      in-flight reply so a slow answer stops burning tokens. Placed right of the
+                      pill in the streaming bubble's own header so it sits with the "in flight"
+                      signal, not in the composer where the send arrow already lives. */}
+                  {adapter.chat.abort && (
+                    <button
+                      type="button"
+                      className="lc-iconbtn"
+                      style={{ ...S.iconbtn, marginLeft: 'auto', ...textStyle('caption'), color: cssVar.mid, padding: '2px 8px', border: `1px solid ${cssVar.border}`, borderRadius: radius.pill }}
+                      onClick={stop}
+                      title="Stop generating"
+                      aria-label="Stop generating"
+                    >
+                      Stop
+                    </button>
+                  )}
                 </div>
-                {toolActivity && <ToolActivityLine activity={toolActivity} brandIcon={hat.toolIcon} />}
+                {toolActivity && <ToolActivityLine activity={toolActivity} brandIcon={hat.toolIcon} labels={hat.toolLabels} />}
                 {/* The caret only trails live text; while a tool runs (no text yet)
                     the activity line above carries the "working" signal instead. */}
                 {streaming && (
