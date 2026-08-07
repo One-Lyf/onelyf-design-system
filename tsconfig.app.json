@@ -21,5 +21,10 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // *.test.ts files run standalone via Node's built-in test runner (`node --test`),
+  // not through this app/library build — they use `node:*` imports, which need
+  // the "node" types (see tsconfig.node.json) rather than this config's
+  // "vite/client" types, and they aren't meant to ship in dist/ anyway.
+  "exclude": ["src/**/*.test.ts"]
 }
