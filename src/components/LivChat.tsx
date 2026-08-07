@@ -61,9 +61,14 @@ export interface LivUsage {
 
 // What `adapter.chat.send` resolves to. Flat (not LivResult<T>) to mirror the
 // federation `liv` client's existing shape; `usage` rides along on success.
+// `extras` is a passthrough for whatever app-domain data the adapter wants to
+// hand back to itself alongside the reply — Commis flows its `proposed[]`
+// action-cards this way, without requiring the DS to know what an action card
+// is. LivChat doesn't read `extras`; it only widens the type so the app's own
+// adapter code can consume it in its onSend hook.
 export type LivChatSendResult =
-  | { ok: true; usage?: LivUsage }
-  | { ok: false; error?: { message?: string; detail?: string } }
+  | { ok: true; usage?: LivUsage; extras?: unknown }
+  | { ok: false; error?: { message?: string; detail?: string }; extras?: unknown }
 
 // The one identity knob. `accent` themes the avatar/active states to the hat's
 // space (Cash Stash gold, Tummyful terracotta …); everything else falls back to
@@ -152,6 +157,78 @@ export interface LivChatProps {
   // with its controls, not a separate dock chrome bar stacked on top. Omit for an inline host.
   onMinimize?: () => void
   onClose?: () => void
+  // Optional one-shot external ask: pre-fill the composer draft, optionally attach some files,
+  // and (typically) auto-open a persistent host that keeps LivChat mounted. `nonce` MUST change
+  // per ask — same nonce twice is idempotent and won't re-fire. Used today by Commis's
+  // "Critique my plating" dock action; the host builds `{prompt, files, nonce}` and hands it in.
+  // The app is responsible for turning image URLs into File objects (a data URL or a fetched
+  // blob) before passing them — DS accepts pre-made Files, no URL fetching.
+  pendingRequest?: { prompt: string; files?: File[]; nonce: number }
+  // Fires exactly once per accepted pendingRequest so the host can clear its own state after
+  // LivChat has consumed the ask (matches Commis's onRequestConsumed today).
+  onPendingRequestConsumed?: () => void
+  // A queue of proposed structured actions the assistant surfaced — rendered as an action-card
+  // stack below the last message, above the composer. Adapters typically populate this from
+  // the previous send's `extras` (Commis's proposed[]). Each card carries a summary + optional
+  // domain body (recipe/pantry/plan-date pickers Commis needs) + apply/dismiss handlers. DS
+  // owns the frame + Apply/Dismiss/Apply-all layout + the styling; the app supplies the DOMAIN
+  // fields via `renderBody`. This is the FIRST-CLASS primitive — not a rendering escape hatch.
+  actionQueue?: LivActionQueue
+  // Actions menu items shown as a popover in the composer toolbar (Commis's "turn this into…"
+  // chef's-knife menu, Advisor's manual "add to budget" etc.). A canonical popover — DS owns
+  // the button + list layout + open/close; the app supplies the LABEL + HANDLER per item.
+  actions?: LivChatAction[]
+}
+
+// One structured mutation the assistant proposes, awaiting the user's Apply. `data` is opaque
+// to LivChat (Commis stashes recipe candidates + resolved ids in there; Advisor stashes finance
+// deltas); `renderBody` lets the app draw its own domain pickers inside DS's card frame.
+export interface LivProposedAction {
+  id: string
+  // App-defined action-type slug — informational to DS, drives Commis/Advisor's own routing.
+  type: string
+  // Human-readable summary shown as the card's headline.
+  summary: string
+  // Opaque app-state payload; app reads it in renderBody + in the apply handler.
+  data?: unknown
+  // Optional app-owned body: renders domain pickers (recipe select, plan date, batch scale…)
+  // inside the card frame. Omit for a summary-only card with just Apply / Dismiss.
+  renderBody?: () => ReactNode
+  // Optional note shown muted below the body (Commis's "Opens the log-used-up review before
+  // anything is deducted from your pantry" style). Not the same as an error — informational.
+  note?: string
+  // Whether the card is ready to apply (pickers filled in etc.). Defaults to true. When false
+  // the Apply button is disabled with a hint.
+  ready?: boolean
+  // Post-apply lifecycle. LivChat sets these from the queue's handlers — apps shouldn't
+  // populate them directly.
+  status?: 'pending' | 'applying' | 'done' | 'error'
+  result?: string    // shown as "✓ {result}" when done, or as the error line when error
+}
+
+export interface LivActionQueue {
+  cards: LivProposedAction[]
+  // Apply one card. Resolve with {ok:true, result?} to mark it done; {ok:false, error?} to mark
+  // it errored. LivChat handles the visual state transitions.
+  onApply(id: string): Promise<{ ok: true; result?: string } | { ok: false; error?: string }>
+  // Dismiss one card. LivChat removes it from the visual stack; the app is responsible for
+  // discarding it from its own state.
+  onDismiss(id: string): void
+  // Optional Apply-all. When present AND ≥2 cards are ready, a batch-summary bar appears with
+  // an "Apply all (N)" button. The app decides what "all" means (skip mark-cooked cards that
+  // open a review, etc.) — DS just calls this.
+  onApplyAll?(): Promise<void>
+  // Optional label for the intro line above the cards. Defaults to a hat-appropriate default.
+  introText?: string
+}
+
+// One item in the composer's manual actions menu (Commis's "turn this into…").
+export interface LivChatAction {
+  id: string
+  label: string       // menu item text ("Save as recipe", "Add to shopping list")
+  hint?: string       // muted second line ("Extract the recipe from this chat")
+  onSelect(): void | Promise<void>
+  disabled?: boolean
 }
 
 const DEFAULT_MODELS: LivModel[] = [
@@ -288,6 +365,9 @@ export const livChatStylesheet = `
 @keyframes lc-blink { 50% { opacity: 0; } }
 .lc-tool { animation: lc-fade-in .18s ease; }
 @keyframes lc-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.lc-card { animation: lc-fade-in .2s ease; }
+.lc-actions-menu { animation: lc-fade-in .12s ease; }
+.lc-actions-item:hover:not(:disabled) { background: var(--ds-track); }
 .lc-ellipsis { animation: lc-pulse 1.2s ease-in-out infinite; }
 @keyframes lc-pulse { 50% { opacity: .3; } }
 .lc-session:hover { background: var(--ds-surface-hi); }
@@ -326,7 +406,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, actionQueue, actions }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -393,6 +473,17 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
   // paint an error banner. Reset at the start of every new send.
   const userAbortedRef = useRef(false)
 
+  // Per-card lifecycle state layered over `actionQueue.cards` — DS owns the pending/applying/
+  // done/error transitions so the app doesn't have to plumb them into its own state. Keyed by
+  // card id; entries stay until the card is removed from the incoming queue.
+  const [cardState, setCardState] = useState<Record<string, { status: 'pending' | 'applying' | 'done' | 'error'; result?: string }>>({})
+  const [applyAllBusy, setApplyAllBusy] = useState(false)
+  // The composer's actions menu open/close (Commis's chef's-knife popover).
+  const [actionsOpen, setActionsOpen] = useState(false)
+  // Nonce of the last pendingRequest we consumed. Guards against re-firing when the SAME
+  // {nonce} arrives more than once (React strict-mode double-invoke or a parent re-render).
+  const consumedPendingNonceRef = useRef<number | null>(null)
+
   // Mirrors renamingId synchronously, same reasoning as activeIdRef above.
   // Committing (Enter) or cancelling (Escape) a rename calls setRenamingId(null),
   // which unmounts the rename <input> on the next render — and browsers fire a
@@ -407,6 +498,50 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
   // mutated synchronously, so the follow-up blur sees the updated value.
   const renamingIdRef = useRef<string | null>(null)
   function setRenaming(id: string | null) { renamingIdRef.current = id; setRenamingId(id) }
+
+  // Consume a one-shot pendingRequest: pre-fill the composer draft, merge any provided Files
+  // in, and notify the host so it can clear its side. Keyed on nonce — the same nonce is
+  // idempotent (won't re-fire if the parent re-renders with the same request), and a NEW
+  // nonce always fires even if prompt/files are identical to the last ask.
+  useEffect(() => {
+    if (!pendingRequest) return
+    if (consumedPendingNonceRef.current === pendingRequest.nonce) return
+    consumedPendingNonceRef.current = pendingRequest.nonce
+    setDraft(pendingRequest.prompt || '')
+    if (pendingRequest.files && pendingRequest.files.length) {
+      setFiles((existing) => [...existing, ...pendingRequest.files!])
+    }
+    onPendingRequestConsumed?.()
+  }, [pendingRequest, onPendingRequestConsumed])
+
+  // Action-card apply/dismiss handlers. DS owns the visual state transition; the app's
+  // onApply/onDismiss handlers own the mutation. On success the card flips to "done" with
+  // the returned result; on failure it flips to "error" so a Retry button appears.
+  async function applyCard(id: string) {
+    if (!actionQueue) return
+    setCardState((s) => ({ ...s, [id]: { status: 'applying' } }))
+    try {
+      const r = await actionQueue.onApply(id)
+      if (r.ok) setCardState((s) => ({ ...s, [id]: { status: 'done', result: r.result } }))
+      else setCardState((s) => ({ ...s, [id]: { status: 'error', result: r.error || 'Could not apply.' } }))
+    } catch (e) {
+      console.error('actionQueue.onApply threw', e)
+      setCardState((s) => ({ ...s, [id]: { status: 'error', result: (e as Error)?.message || 'Could not apply.' } }))
+    }
+  }
+  function dismissCard(id: string) {
+    if (!actionQueue) return
+    // Optimistic: drop the local state; the app removes the card from its own list.
+    setCardState((s) => { const { [id]: _drop, ...rest } = s; return rest })
+    try { actionQueue.onDismiss(id) } catch (e) { console.error('actionQueue.onDismiss threw', e) }
+  }
+  async function applyAllCards() {
+    if (!actionQueue?.onApplyAll) return
+    setApplyAllBusy(true)
+    try { await actionQueue.onApplyAll() }
+    catch (e) { console.error('actionQueue.onApplyAll threw', e) }
+    finally { setApplyAllBusy(false) }
+  }
 
   async function loadSessions(selectFirst = false) {
     try {
@@ -872,6 +1007,78 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
                 )}
               </div>
             )}
+            {/* Action-card stack — moved to render AFTER the streaming bubble so cards from the
+                LAST completed turn sit closest to the composer (where the user's attention is
+                after they read the reply). Only rendered when the app supplies actionQueue. */}
+            {actionQueue && actionQueue.cards.length > 0 && (() => {
+              const cards = actionQueue.cards.map((c) => {
+                const overlay = cardState[c.id]
+                return { ...c, status: overlay?.status ?? c.status ?? 'pending', result: overlay?.result ?? c.result }
+              })
+              const readyCount = cards.filter((c) => c.status !== 'done' && c.ready !== false).length
+              const showBatch = cards.length > 1 && !!actionQueue.onApplyAll
+              return (
+                <div className="lc-cards" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: space.sm }}>
+                  {actionQueue.introText !== '' && (
+                    <p style={{ ...S.muted, margin: 0 }}>
+                      {actionQueue.introText || (hat.name + (cards.length === 1 ? ' proposes this change. Nothing happens until you tap Apply:' : ' proposes these changes. Nothing happens until you tap Apply:'))}
+                    </p>
+                  )}
+                  {showBatch && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: `1px solid ${cssVar.border}`, borderRadius: radius.md, background: cssVar.surface }}>
+                      <ul style={{ ...textStyle('caption'), color: cssVar.mid, listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                        {cards.map((c) => (
+                          <li key={c.id} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: c.status === 'done' ? 'line-through' : undefined }}>
+                            {c.summary}{c.status === 'done' ? ' — done' : ''}
+                          </li>
+                        ))}
+                      </ul>
+                      <button className="ds-btn" style={{ ...S.primaryBtn, whiteSpace: 'nowrap' }}
+                        disabled={!readyCount || applyAllBusy} onClick={applyAllCards}
+                        title={readyCount ? 'Apply every ready change above in one tap' : 'No cards are ready yet'}>
+                        {applyAllBusy ? 'Applying all…' : `Apply all (${readyCount})`}
+                      </button>
+                    </div>
+                  )}
+                  {cards.map((c) => {
+                    const done = c.status === 'done', err = c.status === 'error', applying = c.status === 'applying'
+                    const notReady = c.ready === false
+                    return (
+                      <div key={c.id} className="lc-card" style={{
+                        border: `1px solid ${cssVar.border}`, borderRadius: radius.md,
+                        background: cssVar.surface, padding: 10,
+                        opacity: done ? 0.72 : 1,
+                        display: 'flex', flexDirection: 'column', gap: 6,
+                      }}>
+                        <div style={{ ...textStyle('bodySm'), color: cssVar.ink }}>{c.summary}</div>
+                        {!done && c.renderBody && <div>{c.renderBody()}</div>}
+                        {!done && c.note && <p style={{ ...S.muted, margin: 0 }}>{c.note}</p>}
+                        {done ? (
+                          <p style={{ ...textStyle('caption'), color: cssVar.mid, margin: 0 }}>{c.result ? `✓ ${c.result}` : '✓ Applied'}</p>
+                        ) : err ? (
+                          <>
+                            <p style={{ ...textStyle('caption'), color: cssVar.danger, margin: 0 }}>{c.result || 'Could not apply.'}</p>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="ds-btn" style={S.primaryBtn} disabled={notReady} onClick={() => applyCard(c.id)}>Retry</button>
+                              <button className="ds-btn" style={S.ghostBtn} onClick={() => dismissCard(c.id)}>Dismiss</button>
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="ds-btn" style={{ ...S.primaryBtn, opacity: (notReady || applying) ? 0.6 : 1 }}
+                              disabled={notReady || applying} onClick={() => applyCard(c.id)}
+                              title={notReady ? "Needs a detail — tell " + hat.name + " the missing part and it'll update this card" : 'Apply this change'}>
+                              {applying ? 'Applying…' : 'Apply'}
+                            </button>
+                            <button className="ds-btn" style={S.ghostBtn} onClick={() => dismissCard(c.id)}>Dismiss</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
 
           <div style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm }}>
@@ -930,6 +1137,49 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose }: 
               {speechInSupported && (
                 <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: listening ? cssVar.danger : cssVar.mid }}
                   title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}><MicI /></button>
+              )}
+              {/* Composer actions menu — Commis's chef's-knife popover ("turn this into…"),
+                  Advisor's "add to budget" etc. DS owns the trigger + popover layout + click-out;
+                  the app supplies items + handlers. The trigger uses hat.toolIcon when set (so
+                  Commis gets its chef's knife), else a generic tool glyph. */}
+              {actions && actions.length > 0 && (
+                <div style={{ position: 'relative', display: 'inline-flex' }}>
+                  <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: actionsOpen ? accent : cssVar.mid }}
+                    title="Actions" aria-label="Actions" aria-expanded={actionsOpen} aria-haspopup="menu"
+                    onClick={() => setActionsOpen((o) => !o)}>
+                    {hat.toolIcon ?? <ToolI />}
+                  </button>
+                  {actionsOpen && (
+                    <>
+                      {/* Click-out overlay — a full-viewport transparent div under the popover
+                          that dismisses on any tap outside. Under (z-index-wise) the popover
+                          itself so items still receive their own clicks. */}
+                      <div onClick={() => setActionsOpen(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
+                      <div className="lc-actions-menu" role="menu" style={{
+                        position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
+                        minWidth: 200, maxWidth: 280, zIndex: 31,
+                        background: cssVar.surface, border: `1px solid ${cssVar.border}`,
+                        borderRadius: radius.md, padding: 4, boxShadow: 'var(--ds-shadow-card)',
+                        display: 'flex', flexDirection: 'column', gap: 1,
+                      }}>
+                        {actions.map((a) => (
+                          <button key={a.id} type="button" role="menuitem"
+                            className="lc-actions-item"
+                            disabled={a.disabled}
+                            style={{ ...textStyle('bodySm'), textAlign: 'left', background: 'transparent', border: 0,
+                              padding: '8px 10px', borderRadius: radius.sm, cursor: a.disabled ? 'not-allowed' : 'pointer',
+                              color: a.disabled ? cssVar.dim : cssVar.ink, opacity: a.disabled ? 0.6 : 1,
+                              display: 'flex', flexDirection: 'column', gap: 2 }}
+                            onClick={async () => { setActionsOpen(false); try { await a.onSelect() } catch (e) { console.error('action.onSelect threw', e) } }}>
+                            <span>{a.label}</span>
+                            {a.hint && <span style={{ ...textStyle('caption'), color: cssVar.mid }}>{a.hint}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
               <div style={{ flex: 1 }} />
               <button
