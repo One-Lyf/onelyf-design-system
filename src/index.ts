@@ -68,6 +68,12 @@ export {
   type LivChatProps, type LivHat, type LivChatAdapter,
   type LivMessage, type LivSession, type LivAttachment, type LivKeyInfo,
   type LivModel, type LivResult, type LivToolActivity,
+  // Send-result shape (widened by #38 with `extras?: unknown` so app-domain metadata can flow
+  // through the adapter without DS knowing the shape) + Anthropic-style usage counts.
+  type LivChatSendResult, type LivUsage,
+  // App-action injection primitives (#38): proposed structured mutations rendered as a card
+  // stack below the reply, and the composer's manual actions menu items.
+  type LivProposedAction, type LivActionQueue, type LivChatAction,
 } from './components/LivChat'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
