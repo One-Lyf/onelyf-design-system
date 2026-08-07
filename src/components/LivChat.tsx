@@ -16,6 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
+import { shouldSendOnEnter } from './livChatComposer'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -1092,7 +1093,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
               placeholder={hat.placeholder || `Message ${hat.name}…`}
               value={draft} onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+              onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing)) { e.preventDefault(); send() } }}
               rows={1} />
             {/* Toolbar row (Commis parity): attach + inline model on the left, send circle on the
                 right. Voice controls (mic / hands-free) land here next, gated on adapter capability. */}

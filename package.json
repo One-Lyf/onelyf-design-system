@@ -26,7 +26,8 @@
     "build": "tsc -b && vite build",
     "build:lib": "vite build",
     "prepare": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test"
   },
   "peerDependencies": {
     "react": ">=18",
