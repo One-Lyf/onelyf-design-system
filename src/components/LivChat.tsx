@@ -462,9 +462,14 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   }
 
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
-  const [showSettings, setShowSettings] = useState(false)
+  // Whether the composer's Brain popover is open. Canonical Liv-chat placement: the Brain
+  // pill (model + API key + usage) lives IN the composer next to attach/mic/send, NOT in
+  // the chat header — see feedback_liv_chat_canon.md (Tummyful is the reference design).
+  const [brainOpen, setBrainOpen] = useState(false)
   const [keyInput, setKeyInput] = useState('')
   const [modelInput, setModelInput] = useState(models[0]?.id ?? 'claude-opus-4-8')
+  // Set to `Saved` briefly after a successful key save; the Brain popover closes automatically
+  // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
   const transcriptRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -729,7 +734,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
           // reads as a failure they didn't cause.
           const em = res.error?.message
           if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
-            if (showKey) setShowSettings(true)
+            if (showKey) setBrainOpen(true)
             setMsg('Add your Anthropic key so ' + hat.name + ' can reply. Your message is saved either way.')
           } else {
             setMsg(em || (hat.name + " couldn't reply."))
@@ -890,11 +895,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               </button>
             )
           })()}
-          {showKey && (
-            <button className="lc-iconbtn ds-btn" style={S.ghostBtn} onClick={() => setShowSettings((s) => !s)}>
-              {keyInfo.hasKey ? 'Brain' : 'Add key'}
-            </button>
-          )}
+          {/* Brain pill moved into the composer (see feedback_liv_chat_canon.md — Tummyful's
+              placement is canon). The header now only carries the token/cost meter + optional
+              dock controls; API-key entry, model selector, and usage breakdown all live in the
+              composer's Brain popover next to attach/mic/send. */}
           {/* Dock controls — only when a floating host supplies them. Chevron-down collapses
               back to the launcher (conversation kept); X dismisses. */}
           {onMinimize && (
@@ -907,23 +911,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       </div>
       {hat.intro && <p style={{ ...S.muted, marginTop: 6 }}>{hat.intro}</p>}
 
-      {showKey && showSettings && (
-        <div style={{ border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: space.sm + 2, margin: `${space.sm}px 0` }}>
-          <p style={S.muted}>
-            {hat.name} replies using <strong>your own Anthropic key</strong> (reading past chats needs no key).
-            {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: space.sm, marginTop: 6 }}>
-            <input className="ds-input" type="password" style={{ ...S.input, flex: 1, minWidth: 160 }}
-              placeholder={keyInfo.hasKey ? 'Replace key (sk-ant-…)' : 'Anthropic key (sk-ant-…)'}
-              value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
-            <select className="ds-input" style={{ ...S.input, width: 'auto' }} value={modelInput} onChange={(e) => setModelInput(e.target.value)}>
-              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-            </select>
-            <button className="ds-btn" style={S.primaryBtn} onClick={saveKey}>Save</button>
-          </div>
-        </div>
-      )}
+      {/* Header BYO-key settings panel removed — API key + model select now live inside the
+          composer's Brain popover (search `brainOpen` in the composer block below), per canon. */}
 
       <div className="lc-body" style={S.body}>
         <button
@@ -1136,8 +1125,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing)) { e.preventDefault(); send() } }}
               rows={1} />
-            {/* Toolbar row (Commis parity): attach + inline model on the left, send circle on the
-                right. Voice controls (mic / hands-free) land here next, gated on adapter capability. */}
+            {/* Toolbar row — canonical order per feedback_liv_chat_canon.md:
+                `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑`. Speaker + mic sit right
+                next to the send button. Brain pill holds model + API key + settings that
+                previously lived in the header. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
               {showAttach && adapter.attachments && (
                 <>
@@ -1145,40 +1136,62 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                   <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
                 </>
               )}
-              {/* Gated on showKey (not just adapter.key) — this selector persists the
-                  model choice via adapter.key.set(), so it's part of the bring-your-own-key
-                  settings the `enableKey` flag controls. A hat that sets enableKey: false
-                  to hide that surface (see the Brain/Add-key button + settings panel above)
-                  had it reappear here regardless, letting a user silently change the saved
-                  model through a control the hat explicitly opted out of. */}
-              {showKey && models.length > 1 && (
-                <select
-                  className="ds-input"
-                  style={{ ...textStyle('caption'), color: accent, background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.pill, padding: '4px 8px', cursor: 'pointer', maxWidth: 150 }}
-                  title="Model"
-                  value={keyInfo.model || modelInput}
-                  onChange={async (e) => {
-                    const id = e.target.value
-                    setModelInput(id)
-                    const r = await adapter.key!.set({ model: id })
-                    // Same failure-surfacing this file already applies to rename/delete (#22) and
-                    // new-chat creation (#29) — a failed save used to be swallowed here, so picking
-                    // a model from this selector would silently revert with no explanation.
-                    if (r.ok) setKeyInfo((k) => ({ ...k, model: id }))
-                    else setMsg(r.error?.message || 'Could not switch model.')
-                  }}
-                >
-                  {models.map((m) => <option key={m.id} value={m.id}>{m.label.split('·')[0].trim()}</option>)}
-                </select>
-              )}
-              {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
-                  dictation (only where the browser supports speech-in). */}
-              <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: handsFree ? accent : cssVar.mid }}
-                title="Hands-free — read replies aloud" aria-pressed={handsFree}
-                onClick={() => setHandsFree((v) => { const next = !v; if (!next) stopSpeaking(); return next })}><SpeakerI /></button>
-              {speechInSupported && (
-                <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: listening ? cssVar.danger : cssVar.mid }}
-                  title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}><MicI /></button>
+              {/* Brain pill: model + API-key + provider settings, all folded together. Gated on
+                  showKey (which respects hat.enableKey === false — a hat that opts out gets no
+                  Brain pill at all). Popover mirrors Tummyful/Cash Stash's Brain menus. */}
+              {showKey && (
+                <div style={{ position: 'relative', display: 'inline-flex' }}>
+                  <button type="button" className="lc-iconbtn ds-btn"
+                    style={{ ...textStyle('caption'), color: accent, background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
+                    title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
+                    aria-expanded={brainOpen} onClick={() => setBrainOpen((o) => !o)}>
+                    <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add key'}</span>
+                    <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+                  </button>
+                  {brainOpen && (
+                    <>
+                      {/* Click-out overlay — same pattern the actions popover below uses. */}
+                      <div onClick={() => setBrainOpen(false)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
+                      <div role="menu" style={{
+                        position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
+                        minWidth: 240, maxWidth: 320, zIndex: 31,
+                        background: cssVar.surface, border: `1px solid ${cssVar.border}`,
+                        borderRadius: radius.md, padding: 10, boxShadow: 'var(--ds-shadow-card)',
+                        display: 'flex', flexDirection: 'column', gap: 8,
+                      }}>
+                        <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
+                        <p style={{ ...S.muted, margin: 0 }}>
+                          {hat.name} replies using <strong>your own Anthropic key</strong>.
+                          {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
+                        </p>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span style={{ ...textStyle('caption'), color: cssVar.mid }}>API key</span>
+                          <input className="ds-input" type="password" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+                            placeholder={keyInfo.hasKey ? 'Replace key (sk-ant-…)' : 'Anthropic key (sk-ant-…)'}
+                            value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
+                        </label>
+                        {models.length > 1 && (
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Model</span>
+                            <select className="ds-input" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+                              value={keyInfo.model || modelInput}
+                              onChange={async (e) => {
+                                const id = e.target.value
+                                setModelInput(id)
+                                const r = await adapter.key!.set({ model: id })
+                                if (r.ok) setKeyInfo((k) => ({ ...k, model: id }))
+                                else setMsg(r.error?.message || 'Could not switch model.')
+                              }}>
+                              {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                            </select>
+                          </label>
+                        )}
+                        <button className="ds-btn" style={S.primaryBtn} onClick={async () => { await saveKey(); setBrainOpen(false); }}>Save</button>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
               {/* Composer actions menu — Commis's chef's-knife popover ("turn this into…"),
                   Advisor's "add to budget" etc. DS owns the trigger + popover layout + click-out;
@@ -1224,6 +1237,17 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                 </div>
               )}
               <div style={{ flex: 1 }} />
+              {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
+                  dictation (only where the browser supports speech-in). Right-cluster placement
+                  next to send, per canon (was on the left of the model select before the
+                  Brain-in-composer refactor). */}
+              <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: handsFree ? accent : cssVar.mid }}
+                title="Hands-free — read replies aloud" aria-pressed={handsFree}
+                onClick={() => setHandsFree((v) => { const next = !v; if (!next) stopSpeaking(); return next })}><SpeakerI /></button>
+              {speechInSupported && (
+                <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: listening ? cssVar.danger : cssVar.mid }}
+                  title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}><MicI /></button>
+              )}
               <button
                 className="ds-btn"
                 style={{ ...S.primaryBtn, width: 40, height: 40, borderRadius: '50%', padding: 0, display: 'grid', placeItems: 'center',
