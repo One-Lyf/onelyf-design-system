@@ -1170,8 +1170,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                   Brain pill at all). Popover mirrors Tummyful/Cash Stash's Brain menus. */}
               {showKey && (
                 <div style={{ position: 'relative', display: 'inline-flex' }}>
+                  {/* Brain pill: opaque surface backing + accent border, matching Tummyful's
+                      original `.composer-modelpill` canon — was `background: transparent` with
+                      a subtle grey border, which read as a floating word rather than a pill
+                      button (Jeff 2026-08-09: "I want the terra cotta pill backing for the
+                      buttons not just a glow"). Every consumer now gets the pill shape; the
+                      accent color they wear (terracotta / green) still comes from their own
+                      hat.accent, so this stays palette-agnostic. */}
                   <button type="button" className="lc-iconbtn ds-btn"
-                    style={{ ...textStyle('caption'), color: accent, background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
+                    style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
                     title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
                     aria-expanded={brainOpen} onClick={() => setBrainOpen((o) => !o)}>
                     <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add key'}</span>
@@ -1277,10 +1284,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                 <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: listening ? cssVar.danger : cssVar.mid }}
                   title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}><MicI /></button>
               )}
+              {/* Send button: flat accent fill, matching Tummyful's `.composer-send` canon. Was
+                  a gradient using `cssVar.primaryDeep` (`var(--ds-primary-deep)`), which is
+                  undefined for consumers that don't inject the DS themeStylesheet (Tummyful)
+                  and rendered as a faded/broken half-gradient. Flat accent works for every
+                  consumer since the hat picks its own accent color. */}
               <button
                 className="ds-btn"
                 style={{ ...S.primaryBtn, width: 40, height: 40, borderRadius: '50%', padding: 0, display: 'grid', placeItems: 'center',
-                  background: `linear-gradient(180deg, ${accent}, ${cssVar.primaryDeep})`,
+                  background: accent, color: cssVar.onPrimary,
                   opacity: (sending || (!draft.trim() && files.length === 0)) ? 0.5 : 1 }}
                 title="Send" aria-label="Send"
                 disabled={sending || (!draft.trim() && files.length === 0)} onClick={() => send()}>
