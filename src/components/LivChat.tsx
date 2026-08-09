@@ -373,6 +373,32 @@ function ToolActivityLine({ activity, brandIcon, labels }: { activity: LivToolAc
 // once (alongside themeStylesheet + componentStylesheet), same pattern as the
 // rest of the design system.
 export const livChatStylesheet = `
+/* Low-specificity fallbacks for the DS color tokens LivChat reads via var(--ds-*). A consumer
+   that also injects themeStylesheet will override these (higher specificity in :root); a
+   consumer that DOESN'T (e.g. an app with its own palette that only wants the LivChat
+   structure) still gets opaque popover backgrounds instead of transparent see-throughs.
+   Dark values by default; the @media block below re-applies light values when the user's
+   OS prefers light AND the consumer didn't force a data-theme. */
+:where(.lc-root) {
+  --ds-bg: #171b16;
+  --ds-surface: #20251f;
+  --ds-surface-hi: #262c24;
+  --ds-track: #2c322a;
+  --ds-border: rgba(232,228,214,0.10);
+  --ds-border-bright: rgba(232,228,214,0.22);
+  --ds-shadow-card: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.45);
+}
+@media (prefers-color-scheme: light) {
+  :where(:root:not([data-theme="dark"]) .lc-root) {
+    --ds-bg: #f4efe1;
+    --ds-surface: #fffdf7;
+    --ds-surface-hi: #fffefb;
+    --ds-track: #ece4d0;
+    --ds-border: rgba(31,90,60,0.14);
+    --ds-border-bright: rgba(31,90,60,0.28);
+    --ds-shadow-card: 0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.10);
+  }
+}
 .lc-caret { animation: lc-blink 1s step-end infinite; }
 @keyframes lc-blink { 50% { opacity: 0; } }
 .lc-tool { animation: lc-fade-in .18s ease; }
@@ -883,6 +909,16 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     sessionOpen: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, background: 'transparent', border: 0, cursor: 'pointer', color: cssVar.ink, padding: '6px 8px', borderRadius: radius.sm } as CSSProperties,
     sessionTitle: { ...textStyle('bodySm'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as CSSProperties,
     iconbtn: { background: 'transparent', border: 0, color: cssVar.mid, cursor: 'pointer', borderRadius: radius.sm, padding: '4px 6px', display: 'inline-flex', alignItems: 'center', lineHeight: 0 } as CSSProperties,
+    // Composer-specific icon buttons: outlined circles with an opaque surface backing —
+    // matches Tummyful's `.composer-icon` canon (Jeff 2026-08-09: pill backing, not just
+    // glow). Used for attach / actions / speaker / mic; distinct from the base `iconbtn`
+    // above which powers rail/header/copy micro-buttons where a flat treatment is right.
+    composerIconbtn: {
+      background: cssVar.surface, border: `1px solid ${cssVar.borderBright}`, color: cssVar.ink,
+      cursor: 'pointer', borderRadius: radius.pill, width: 32, height: 32, padding: 0,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0,
+      flex: '0 0 auto',
+    } as CSSProperties,
     main: { display: 'flex', flexDirection: 'column', minWidth: 0 } as CSSProperties,
     transcript: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: space.sm, padding: space.xs, minHeight: 200, maxHeight: 460 } as CSSProperties,
     input: { ...textStyle('body'), width: '100%', boxSizing: 'border-box', color: cssVar.ink, background: cssVar.bg, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '9px 12px' } as CSSProperties,
@@ -1161,7 +1197,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
               {showAttach && adapter.attachments && (
                 <>
-                  <button className="lc-iconbtn" style={S.iconbtn} title="Attach image" aria-label="Attach image" onClick={() => fileRef.current?.click()}><PlusI /></button>
+                  <button className="lc-iconbtn" style={S.composerIconbtn} title="Attach image" aria-label="Attach image" onClick={() => fileRef.current?.click()}><PlusI /></button>
                   <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
                 </>
               )}
@@ -1235,7 +1271,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                   Commis gets its chef's knife), else a generic tool glyph. */}
               {actions && actions.length > 0 && (
                 <div style={{ position: 'relative', display: 'inline-flex' }}>
-                  <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: actionsOpen ? accent : cssVar.mid }}
+                  <button type="button" className="lc-iconbtn"
+                    style={{ ...S.composerIconbtn,
+                      background: actionsOpen ? accent : cssVar.surface,
+                      borderColor: actionsOpen ? accent : cssVar.borderBright,
+                      color: actionsOpen ? cssVar.onPrimary : cssVar.ink }}
                     title="Actions" aria-label="Actions" aria-expanded={actionsOpen} aria-haspopup="menu"
                     onClick={() => setActionsOpen((o) => !o)}>
                     {hat.toolIcon ?? <ToolI />}
@@ -1275,29 +1315,50 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               <div style={{ flex: 1 }} />
               {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
                   dictation (only where the browser supports speech-in). Right-cluster placement
-                  next to send, per canon (was on the left of the model select before the
-                  Brain-in-composer refactor). */}
-              <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: handsFree ? accent : cssVar.mid }}
+                  next to send, per canon. Pressed states use filled backgrounds — Tummyful's
+                  `.composer-icon.on` (hands-free accent fill) + `.composer-icon.listening`
+                  (mic danger fill) — so the active mode is unmistakable at a glance, not
+                  just a color shift on the SVG. */}
+              <button type="button" className="lc-iconbtn"
+                style={{ ...S.composerIconbtn,
+                  background: handsFree ? accent : cssVar.surface,
+                  borderColor: handsFree ? accent : cssVar.borderBright,
+                  color: handsFree ? cssVar.onPrimary : cssVar.ink }}
                 title="Hands-free — read replies aloud" aria-pressed={handsFree}
                 onClick={() => setHandsFree((v) => { const next = !v; if (!next) stopSpeaking(); return next })}><SpeakerI /></button>
               {speechInSupported && (
-                <button type="button" className="lc-iconbtn" style={{ ...S.iconbtn, color: listening ? cssVar.danger : cssVar.mid }}
+                <button type="button" className="lc-iconbtn"
+                  style={{ ...S.composerIconbtn,
+                    background: listening ? cssVar.danger : cssVar.surface,
+                    borderColor: listening ? cssVar.danger : cssVar.borderBright,
+                    color: listening ? '#fff' : cssVar.ink }}
                   title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}><MicI /></button>
               )}
-              {/* Send button: flat accent fill, matching Tummyful's `.composer-send` canon. Was
-                  a gradient using `cssVar.primaryDeep` (`var(--ds-primary-deep)`), which is
-                  undefined for consumers that don't inject the DS themeStylesheet (Tummyful)
-                  and rendered as a faded/broken half-gradient. Flat accent works for every
-                  consumer since the hat picks its own accent color. */}
-              <button
-                className="ds-btn"
-                style={{ ...S.primaryBtn, width: 40, height: 40, borderRadius: '50%', padding: 0, display: 'grid', placeItems: 'center',
-                  background: accent, color: cssVar.onPrimary,
-                  opacity: (sending || (!draft.trim() && files.length === 0)) ? 0.5 : 1 }}
-                title="Send" aria-label="Send"
-                disabled={sending || (!draft.trim() && files.length === 0)} onClick={() => send()}>
-                {sending ? '…' : <ArrowUpI />}
-              </button>
+              {/* Send button: flat accent fill (canon). While streaming, swap in a red stop
+                  square so the abort control lives IN the send slot — matches Tummyful's
+                  `.composer-send.stop` behavior, not a separate "Stop" pill floating above
+                  the transcript. Only wired to an abort when the adapter supports it. */}
+              {sending && adapter.chat.abort ? (
+                <button
+                  type="button"
+                  className="ds-btn"
+                  style={{ width: 40, height: 40, borderRadius: '50%', padding: 0, display: 'grid', placeItems: 'center',
+                    background: cssVar.danger, color: '#fff', border: 0, cursor: 'pointer' }}
+                  title="Stop" aria-label="Stop"
+                  onClick={stop}>
+                  <span style={{ fontSize: 12, lineHeight: 1 }}>■</span>
+                </button>
+              ) : (
+                <button
+                  className="ds-btn"
+                  style={{ ...S.primaryBtn, width: 40, height: 40, borderRadius: '50%', padding: 0, display: 'grid', placeItems: 'center',
+                    background: accent, color: cssVar.onPrimary,
+                    opacity: (sending || (!draft.trim() && files.length === 0)) ? 0.5 : 1 }}
+                  title="Send" aria-label="Send"
+                  disabled={sending || (!draft.trim() && files.length === 0)} onClick={() => send()}>
+                  {sending ? '…' : <ArrowUpI />}
+                </button>
+              )}
             </div>
           </div>
         </div>
