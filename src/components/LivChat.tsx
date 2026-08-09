@@ -164,10 +164,21 @@ export interface LivChatProps {
   // "Critique my plating" dock action; the host builds `{prompt, files, nonce}` and hands it in.
   // The app is responsible for turning image URLs into File objects (a data URL or a fetched
   // blob) before passing them — DS accepts pre-made Files, no URL fetching.
-  pendingRequest?: { prompt: string; files?: File[]; nonce: number }
+  // `autoSend`: skip the pre-fill-and-wait-for-tap step and send immediately. For a host driving
+  // LivChat hands-free (e.g. a wake-word voice gate that decided the utterance IS the message,
+  // not a draft) — there's no user left to tap Send. Omit/false preserves the original
+  // pre-fill-only behavior.
+  pendingRequest?: { prompt: string; files?: File[]; nonce: number; autoSend?: boolean }
   // Fires exactly once per accepted pendingRequest so the host can clear its own state after
   // LivChat has consumed the ask (matches Commis's onRequestConsumed today).
   onPendingRequestConsumed?: () => void
+  // Optional: fires whenever the visible transcript or active session changes, so a host that
+  // needs the live conversation for its OWN app-owned logic (Commis's save-as-recipe /
+  // push-to-shopping / push-to-pantry / log-consumed / propose-changes extraction, which all read
+  // "the current chat") doesn't have to duplicate LivChat's session/message state to get it —
+  // LivChat is the only thing that actually calls adapter.messages.list. Purely a read-only
+  // mirror; the host must not mutate through this.
+  onMessagesChange?: (messages: LivMessage[], sessionId: string | null) => void
   // A queue of proposed structured actions the assistant surfaced — rendered as an action-card
   // stack below the last message, above the composer. Adapters typically populate this from
   // the previous send's `extras` (Commis's proposed[]). Each card carries a summary + optional
@@ -407,7 +418,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, actionQueue, actions }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -518,11 +529,19 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     if (!pendingRequest) return
     if (consumedPendingNonceRef.current === pendingRequest.nonce) return
     consumedPendingNonceRef.current = pendingRequest.nonce
-    setDraft(pendingRequest.prompt || '')
-    if (pendingRequest.files && pendingRequest.files.length) {
-      setFiles((existing) => [...existing, ...pendingRequest.files!])
+    if (pendingRequest.autoSend) {
+      // Bypass draft state entirely — send() takes explicit overrides so this doesn't race the
+      // setDraft/setFiles batching below (which wouldn't be committed yet on this same tick).
+      send(pendingRequest.prompt, pendingRequest.files)
+    } else {
+      setDraft(pendingRequest.prompt || '')
+      if (pendingRequest.files && pendingRequest.files.length) {
+        setFiles((existing) => [...existing, ...pendingRequest.files!])
+      }
     }
     onPendingRequestConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `send` is a stable per-render
+    // closure (function declaration, not state); adding it would re-fire this on every render.
   }, [pendingRequest, onPendingRequestConsumed])
 
   // Action-card apply/dismiss handlers. DS owns the visual state transition; the app's
@@ -579,6 +598,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   useEffect(() => {
     onState?.({ messageCount: messages.length, thinking: sending || streaming.length > 0 })
   }, [messages.length, sending, streaming, onState])
+
+  useEffect(() => {
+    onMessagesChange?.(messages, activeId)
+  }, [messages, activeId, onMessagesChange])
 
   useEffect(() => {
     const el = transcriptRef.current
@@ -666,9 +689,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     loadSessions()
   }
 
-  async function send() {
-    const text = draft.trim()
-    if ((!text && files.length === 0) || sending) return
+  // overrideText/overrideFiles let a caller (the pendingRequest autoSend path) send explicit
+  // content without round-tripping through draft/files state first — draft/files updates are
+  // async (setState), so reading them back via closure on the same tick would see stale values.
+  // The composer's own Send button/Enter-key calls send() with no args, falling back to draft/
+  // files exactly as before this override was added.
+  async function send(overrideText?: string, overrideFiles?: File[]) {
+    const text = (overrideText ?? draft).trim()
+    const draftFiles = overrideFiles ?? files
+    if ((!text && draftFiles.length === 0) || sending) return
     // Fresh send — any prior abort flag from an earlier turn is stale, don't let it silence
     // a legitimate error this turn.
     userAbortedRef.current = false
@@ -696,7 +725,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
 
       const tmpId = `tmp-${Math.round(performance.now())}-${sessions.length}`
       const localPath = (i: number) => `local:${tmpId}:${i}`
-      const sentFiles = files
+      const sentFiles = draftFiles
       const optimistic: LivMessage = {
         id: tmpId, role: 'user', modality: 'text', channel: 'console',
         content: text, attachments: sentFiles.map((f, i) => ({ kind: 'image', path: localPath(i), mime: f.type })),
@@ -1254,7 +1283,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                   background: `linear-gradient(180deg, ${accent}, ${cssVar.primaryDeep})`,
                   opacity: (sending || (!draft.trim() && files.length === 0)) ? 0.5 : 1 }}
                 title="Send" aria-label="Send"
-                disabled={sending || (!draft.trim() && files.length === 0)} onClick={send}>
+                disabled={sending || (!draft.trim() && files.length === 0)} onClick={() => send()}>
                 {sending ? '…' : <ArrowUpI />}
               </button>
             </div>
