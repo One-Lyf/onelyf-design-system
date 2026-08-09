@@ -413,23 +413,26 @@ export const livChatStylesheet = `
 .lc-iconbtn:hover:not(:disabled) { background: var(--ds-track); }
 .lc-copy { opacity: 0; transition: opacity .12s ease; }
 .lc-bubble:hover .lc-copy, .lc-copy:focus-visible { opacity: 1; }
-/* Below 620px the two-column grid collapses to one column and the session
-   rail stops taking up permanent vertical space above the transcript —
-   instead it's a toggleable sheet, shown/hidden via the .lc-rail-toggle
-   button and overlaid above the transcript when open. */
-@media (max-width: 620px) {
-  .lc-body { grid-template-columns: 1fr !important; position: relative; }
-  .lc-rail-toggle { display: inline-flex !important; }
-  .lc-rail {
-    display: none !important;
-    position: absolute; top: 0; left: 0; right: 0; z-index: 20;
-    max-height: 70vh; overflow-y: auto;
-    background: var(--ds-surface); border: 1px solid var(--ds-border);
-    border-radius: ${radius.md}px; padding: 8px;
-    box-shadow: var(--ds-shadow-card);
-  }
-  .lc-rail[data-open="true"] { display: flex !important; }
+/* Sessions rail is a slide-in LEFT DRAWER at all breakpoints (Tummyful canon —
+   never a permanent left column that eats horizontal space). The .lc-rail-toggle
+   button ("History (N)") is always visible in the header; the rail slides in
+   over the transcript when opened, and a scrim behind it dismisses on tap-out.
+   Consumers wanting the desktop-style always-visible rail can wrap LivChat in
+   their own two-column layout — but the DEFAULT is drawer, matching Commis. */
+.lc-body { position: relative; }
+.lc-rail-scrim {
+  position: absolute; inset: 0; z-index: 15; background: rgba(0,0,0,0.35);
+  cursor: pointer; animation: lc-fade-in .14s ease;
 }
+.lc-rail {
+  position: absolute; top: 0; left: 0; bottom: 0; z-index: 16;
+  width: 280px; max-width: 82vw; overflow-y: auto;
+  background: var(--ds-surface); border-right: 1px solid var(--ds-border-bright);
+  border-radius: 0 ${radius.md}px ${radius.md}px 0; padding: 12px;
+  box-shadow: var(--ds-shadow-card);
+  animation: lc-slide-in-left .18s cubic-bezier(.16,1,.3,1);
+}
+@keyframes lc-slide-in-left { from { transform: translateX(-12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 `
 
 // Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
@@ -903,7 +906,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     card: { background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, padding: space.md, boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' } as CSSProperties,
     head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.sm } as CSSProperties,
     muted: { ...textStyle('caption'), color: cssVar.mid } as CSSProperties,
-    body: { display: 'grid', gridTemplateColumns: 'minmax(140px, 200px) 1fr', gap: space.md, marginTop: space.md, minHeight: 320 } as CSSProperties,
+    // Body is a single-column stack now — the sessions rail is a slide-in drawer over
+    // the transcript (Tummyful canon), not a permanent left column. `position: relative`
+    // is what the drawer + scrim (both `position: absolute`) anchor to.
+    body: { position: 'relative', marginTop: space.md, minHeight: 320 } as CSSProperties,
     rail: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } as CSSProperties,
     sessionRow: { display: 'flex', alignItems: 'center', gap: 4, borderRadius: radius.sm, padding: 2 } as CSSProperties,
     sessionOpen: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, background: 'transparent', border: 0, cursor: 'pointer', color: cssVar.ink, padding: '6px 8px', borderRadius: radius.sm } as CSSProperties,
@@ -938,7 +944,25 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   return (
     <section className="lc-root" style={{ ...S.card, ['--lc-accent' as string]: accent }}>
       <div style={S.head}>
-        <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
+          {/* History (N) pill — always visible, opens the slide-in drawer over the transcript.
+              Matches Tummyful's `.commis-history-btn`. Text style is subtle so it doesn't
+              compete with the hat identity in the header. */}
+          <button
+            type="button"
+            className="lc-iconbtn"
+            aria-expanded={railOpen}
+            aria-label="Past conversations"
+            title="Past conversations"
+            onClick={() => setRailOpen((o) => !o)}
+            style={{ ...textStyle('caption'), background: 'transparent', border: `1px solid ${cssVar.border}`,
+              borderRadius: radius.pill, padding: '3px 10px', color: cssVar.mid, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <MenuI /> History{sessions.length ? ` (${sessions.length})` : ''}
+          </button>
+        </div>
+        <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
           {hat.glyph && <Glyph variant={hat.glyph} size={22} />}
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{hat.name}{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
         </h2>
@@ -980,15 +1004,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
           composer's Brain popover (search `brainOpen` in the composer block below), per canon. */}
 
       <div className="lc-body" style={S.body}>
-        <button
-          type="button"
-          className="lc-rail-toggle ds-btn"
-          style={{ ...S.ghostBtn, display: 'none', width: '100%', marginBottom: space.xs, alignItems: 'center', justifyContent: 'center', gap: 6 }}
-          aria-expanded={railOpen}
-          onClick={() => setRailOpen((o) => !o)}
-        >
-          <MenuI /> History{sessions.length ? ` (${sessions.length})` : ''}
-        </button>
+        {railOpen && (
+          <div className="lc-rail-scrim" onClick={() => setRailOpen(false)} aria-hidden="true" />
+        )}
+        {railOpen && (
         <aside className="lc-rail" data-open={railOpen} style={S.rail}>
           <button className="ds-btn" style={{ ...S.ghostBtn, width: '100%' }} onClick={newSession}>+ New chat</button>
           {sessions.length === 0 && <p style={S.muted}>No conversations yet.</p>}
@@ -1023,6 +1042,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             ))}
           </ul>
         </aside>
+        )}
 
         <div style={S.main}>
           <div className="lc-transcript" ref={transcriptRef} style={S.transcript}>
