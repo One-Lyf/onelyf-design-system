@@ -144,6 +144,12 @@ export interface LivChatAdapter {
     speak(text: string): Promise<void>
     stop?(): void
   }
+  // Optional: called from a user gesture the exact moment the Hands-free (speaker) toggle
+  // flips. `on: true` means the user just enabled hands-free; the consumer can use this
+  // moment to unlock iOS audio + audio-session prewarm, start its own wake-word dictation,
+  // or run any other one-shot side effect that needs to happen under a user-gesture stack
+  // frame. `on: false` on disable. Non-blocking; failures are the consumer's problem.
+  onHandsFreeChange?(on: boolean): void
 }
 
 export interface LivChatProps {
@@ -190,6 +196,11 @@ export interface LivChatProps {
   // chef's-knife menu, Advisor's manual "add to budget" etc.). A canonical popover — DS owns
   // the button + list layout + open/close; the app supplies the LABEL + HANDLER per item.
   actions?: LivChatAction[]
+  // Fires from inside the click handler for the Hands-free (speaker) toggle, with the new
+  // on/off state. Consumers use this for one-shot side effects that need to happen under a
+  // user-gesture stack frame — iOS TTS audio-session unlock, wake-word dictation start,
+  // audio-chime prewarm, etc. Purely optional; DS handles the toggle either way.
+  onHandsFreeChange?: (on: boolean) => void
 }
 
 // One structured mutation the assistant proposes, awaiting the user's Apply. `data` is opaque
@@ -413,26 +424,27 @@ export const livChatStylesheet = `
 .lc-iconbtn:hover:not(:disabled) { background: var(--ds-track); }
 .lc-copy { opacity: 0; transition: opacity .12s ease; }
 .lc-bubble:hover .lc-copy, .lc-copy:focus-visible { opacity: 1; }
-/* Sessions rail is a slide-in LEFT DRAWER at all breakpoints (Tummyful canon —
-   never a permanent left column that eats horizontal space). The .lc-rail-toggle
-   button ("History (N)") is always visible in the header; the rail slides in
-   over the transcript when opened, and a scrim behind it dismisses on tap-out.
-   Consumers wanting the desktop-style always-visible rail can wrap LivChat in
-   their own two-column layout — but the DEFAULT is drawer, matching Commis. */
-.lc-body { position: relative; }
-.lc-rail-scrim {
-  position: absolute; inset: 0; z-index: 15; background: rgba(0,0,0,0.35);
-  cursor: pointer; animation: lc-fade-in .14s ease;
-}
+/* Sessions rail is an expandable left SIDEBAR (Tummyful canon — Jeff 2026-08-09:
+   "I wanted the History menu as it was before as an expandable sidebar menu off to
+   the left not something that blankets the whole chat window"). Closed by default;
+   the History (N) pill in the header opens it. When open, the transcript column
+   shifts right — the sidebar sits ALONGSIDE the transcript, not over it. No scrim,
+   no blanket. On the narrowest viewports the sidebar takes most of the width
+   because the transcript would be too narrow otherwise. */
+.lc-body { display: grid; grid-template-columns: 1fr; gap: 0; transition: grid-template-columns .18s ease; }
+.lc-body[data-rail-open="true"] { grid-template-columns: minmax(200px, 260px) 1fr; gap: 12px; }
 .lc-rail {
-  position: absolute; top: 0; left: 0; bottom: 0; z-index: 16;
-  width: 280px; max-width: 82vw; overflow-y: auto;
-  background: var(--ds-surface); border-right: 1px solid var(--ds-border-bright);
-  border-radius: 0 ${radius.md}px ${radius.md}px 0; padding: 12px;
+  overflow-y: auto;
+  background: var(--ds-surface); border: 1px solid var(--ds-border-bright);
+  border-radius: ${radius.md}px; padding: 10px;
   box-shadow: var(--ds-shadow-card);
-  animation: lc-slide-in-left .18s cubic-bezier(.16,1,.3,1);
+  animation: lc-fade-in .14s ease;
+  min-width: 0;
 }
-@keyframes lc-slide-in-left { from { transform: translateX(-12px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@media (max-width: 620px) {
+  .lc-body[data-rail-open="true"] { grid-template-columns: 1fr; }
+  .lc-body[data-rail-open="true"] .lc-main { display: none; }
+}
 `
 
 // Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
@@ -447,7 +459,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -492,6 +504,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   // Running token/cost total for this console (spans sessions), reset by tapping
   // the meter. Cost is derived at render time from the current model's tier.
   const [usage, setUsage] = useState<LivUsage>({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
+  // Most-recent turn's usage — the Brain menu shows this as its own row (Tummyful's canon
+  // has Today/Session/Last-turn/Balance; DS shows Session + Last-turn + Balance today, Daily
+  // needs localStorage-backed rollover). Cleared on meter reset (tap the token cost pill).
+  const [lastTurn, setLastTurn] = useState<LivUsage | null>(null)
   function addUsage(u: LivUsage) {
     setUsage((p) => ({
       input: (p.input || 0) + (u.input || 0),
@@ -499,6 +515,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       cacheCreate: (p.cacheCreate || 0) + (u.cacheCreate || 0),
       cacheRead: (p.cacheRead || 0) + (u.cacheRead || 0),
     }))
+    setLastTurn(u)
   }
 
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
@@ -874,7 +891,26 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       lastWritten = next
       setDraft(next)
     }
-    rec.onend = () => { setListening(false); recognitionRef.current = null }
+    rec.onend = () => {
+      setListening(false); recognitionRef.current = null
+      // Hands-free auto-send: when the user pauses long enough that the recognizer ends
+      // its utterance (continuous=false means one utterance = one onend), and hands-free
+      // is on, send the transcript and restart the mic so it's a natural back-and-forth
+      // without tapping Send between turns. This is the whole point of hands-free — Jeff:
+      // "hands free takes my voice as text but does not transmit it to the chat I have to
+      // hit send" (2026-08-09). Without this the speaker toggle only handled the reply
+      // half of hands-free (TTS-on-reply), not the send half.
+      if (handsFree && sessionFinal.trim()) {
+        const utter = sessionFinal.trim()
+        setDraft(''); // clear the composer immediately
+        send(utter)
+        // Restart the mic after a short beat so it isn't listening to Liv's TTS reply
+        // (via adapter.voice.speak → the browser's own speech-out). The 200ms is a small
+        // grace; a proper mic-vs-TTS gate would await voice.speak's end, but this covers
+        // the common case where the user's speech is quicker than Liv's reply.
+        setTimeout(() => { if (handsFree) toggleMic() }, 200)
+      }
+    }
     rec.onerror = () => { setListening(false); recognitionRef.current = null }
     recognitionRef.current = rec
     setListening(true)
@@ -976,7 +1012,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                 type="button"
                 className="lc-iconbtn"
                 title={`${totalTok.toLocaleString()} tokens this session total · estimated ${keyInfo.model || 'model'} list cost — tap to reset`}
-                onClick={() => setUsage({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })}
+                onClick={() => { setUsage({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }); setLastTurn(null) }}
                 style={{ background: 'transparent', border: `1px solid ${cssVar.border}`, borderRadius: radius.sm, padding: '3px 7px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, lineHeight: 1.1 }}
               >
                 <span style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>${cost.toFixed(4)}</span>
@@ -1003,10 +1039,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       {/* Header BYO-key settings panel removed — API key + model select now live inside the
           composer's Brain popover (search `brainOpen` in the composer block below), per canon. */}
 
-      <div className="lc-body" style={S.body}>
-        {railOpen && (
-          <div className="lc-rail-scrim" onClick={() => setRailOpen(false)} aria-hidden="true" />
-        )}
+      <div className="lc-body" data-rail-open={railOpen || undefined} style={S.body}>
         {railOpen && (
         <aside className="lc-rail" data-open={railOpen} style={S.rail}>
           <button className="ds-btn" style={{ ...S.ghostBtn, width: '100%' }} onClick={newSession}>+ New chat</button>
@@ -1044,7 +1077,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
         </aside>
         )}
 
-        <div style={S.main}>
+        <div className="lc-main" style={S.main}>
           <div className="lc-transcript" ref={transcriptRef} style={S.transcript}>
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
@@ -1279,6 +1312,26 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                             </select>
                           </label>
                         )}
+                        {/* Usage rows — Tummyful canon has Today/Session/Last-turn/Balance.
+                            DS shows Session / Last-turn / Balance here (Daily needs
+                            localStorage-backed rollover and lands in a follow-up). */}
+                        {(() => {
+                          const totalTok = (usage.input || 0) + (usage.output || 0)
+                          const sessionCost = usageCost(usage, keyInfo.model)
+                          const lastTok = lastTurn ? (lastTurn.input || 0) + (lastTurn.output || 0) : 0
+                          const lastCost = lastTurn ? usageCost(lastTurn, keyInfo.model) : 0
+                          if (totalTok <= 0) return null
+                          const row = { display: 'flex', justifyContent: 'space-between', gap: 8, ...textStyle('caption') } as CSSProperties
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${cssVar.border}`, paddingTop: 8 }}>
+                              <div style={row}><span style={{ color: cssVar.mid }}>Session</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${sessionCost.toFixed(4)} · {totalTok.toLocaleString()} tok</span></div>
+                              {lastTurn && lastTok > 0 && (
+                                <div style={row}><span style={{ color: cssVar.mid }}>Last turn</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${lastCost.toFixed(4)} · {lastTok.toLocaleString()} tok</span></div>
+                              )}
+                              <div style={row}><span style={{ color: cssVar.mid }}>Balance</span><span style={{ color: cssVar.dim, fontVariantNumeric: 'tabular-nums' }}>{(usage.input || 0).toLocaleString()} in · {(usage.output || 0).toLocaleString()} out</span></div>
+                            </div>
+                          )
+                        })()}
                         <button className="ds-btn" style={S.primaryBtn} onClick={async () => { await saveKey(); setBrainOpen(false); }}>Save</button>
                       </div>
                     </>
@@ -1345,7 +1398,21 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                   borderColor: handsFree ? accent : cssVar.borderBright,
                   color: handsFree ? cssVar.onPrimary : cssVar.ink }}
                 title="Hands-free — read replies aloud" aria-pressed={handsFree}
-                onClick={() => setHandsFree((v) => { const next = !v; if (!next) stopSpeaking(); return next })}><SpeakerI /></button>
+                onClick={() => setHandsFree((v) => {
+                  const next = !v
+                  // Fire onHandsFreeChange inside this user-gesture click handler so a consumer
+                  // (Commis) can unlock iOS audio / prewarm the TTS session / start its own
+                  // wake-word dictation. Must run BEFORE the state flip's re-render, or the
+                  // gesture stack frame is already gone by the time the callback would fire.
+                  try { onHandsFreeChange?.(next) } catch (e) { console.error('onHandsFreeChange threw', e) }
+                  if (!next) stopSpeaking()
+                  // Turning ON: also auto-start the mic so hands-free is one-tap. Turning OFF:
+                  // stop the mic if it was running. Both under this same click, so any browser
+                  // that requires a user gesture to grant mic sees this exact tap.
+                  if (next && !listening) toggleMic()
+                  if (!next && listening) recognitionRef.current?.stop()
+                  return next
+                })}><SpeakerI /></button>
               {speechInSupported && (
                 <button type="button" className="lc-iconbtn"
                   style={{ ...S.composerIconbtn,
