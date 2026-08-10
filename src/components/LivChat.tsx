@@ -1270,7 +1270,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                     style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
                     title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
                     aria-expanded={brainOpen} onClick={() => setBrainOpen((o) => !o)}>
-                    <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add key'}</span>
+                    <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add Key'}</span>
                     <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
                   </button>
                   {brainOpen && (
@@ -1291,7 +1291,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                           {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
                         </p>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <span style={{ ...textStyle('caption'), color: cssVar.mid }}>API key</span>
+                          <span style={{ ...textStyle('caption'), color: cssVar.mid }}>API Key</span>
                           <input className="ds-input" type="password" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
                             placeholder={keyInfo.hasKey ? 'Replace key (sk-ant-…)' : 'Anthropic key (sk-ant-…)'}
                             value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
@@ -1326,7 +1326,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${cssVar.border}`, paddingTop: 8 }}>
                               <div style={row}><span style={{ color: cssVar.mid }}>Session</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${sessionCost.toFixed(4)} · {totalTok.toLocaleString()} tok</span></div>
                               {lastTurn && lastTok > 0 && (
-                                <div style={row}><span style={{ color: cssVar.mid }}>Last turn</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${lastCost.toFixed(4)} · {lastTok.toLocaleString()} tok</span></div>
+                                <div style={row}><span style={{ color: cssVar.mid }}>Last Turn</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${lastCost.toFixed(4)} · {lastTok.toLocaleString()} tok</span></div>
                               )}
                               <div style={row}><span style={{ color: cssVar.mid }}>Balance</span><span style={{ color: cssVar.dim, fontVariantNumeric: 'tabular-nums' }}>{(usage.input || 0).toLocaleString()} in · {(usage.output || 0).toLocaleString()} out</span></div>
                             </div>
