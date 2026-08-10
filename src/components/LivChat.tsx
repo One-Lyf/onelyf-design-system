@@ -101,6 +101,11 @@ export interface LivHat {
   // Falls through to the built-in web_search/fetch_url defaults for those two, and
   // to "Working" for any unmapped tool name.
   toolLabels?: Record<string, string>
+  // Optional persona-tier selector shown in the Brain menu (Cash Stash Advisor's Standard vs
+  // Premium pattern — Standard = shallower prompt, Premium = deeper). Consumer supplies the
+  // list AND the current selection via LivChatProps.tier + onTierChange (below). Omit both
+  // to hide the row entirely.
+  tiers?: { id: string; label: string }[]
 }
 
 // Backend-agnostic data port. Its shape mirrors the federation `liv` client so an
@@ -201,6 +206,11 @@ export interface LivChatProps {
   // user-gesture stack frame — iOS TTS audio-session unlock, wake-word dictation start,
   // audio-chime prewarm, etc. Purely optional; DS handles the toggle either way.
   onHandsFreeChange?: (on: boolean) => void
+  // Current persona tier + change handler for the Brain menu's tier dropdown. Ignored when
+  // hat.tiers is omitted. Consumer typically persists this via `usePersistedState` (Cash
+  // Stash) or a Supabase family setting (Tummyful, once Commis wants it).
+  tier?: string
+  onTierChange?: (id: string) => void
 }
 
 // One structured mutation the assistant proposes, awaiting the user's Apply. `data` is opaque
@@ -459,7 +469,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, tier, onTierChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -504,10 +514,29 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   // Running token/cost total for this console (spans sessions), reset by tapping
   // the meter. Cost is derived at render time from the current model's tier.
   const [usage, setUsage] = useState<LivUsage>({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
-  // Most-recent turn's usage — the Brain menu shows this as its own row (Tummyful's canon
-  // has Today/Session/Last-turn/Balance; DS shows Session + Last-turn + Balance today, Daily
-  // needs localStorage-backed rollover). Cleared on meter reset (tap the token cost pill).
+  // Most-recent turn's usage. Cleared on meter reset (tap the token cost pill).
   const [lastTurn, setLastTurn] = useState<LivUsage | null>(null)
+  // Daily meter — localStorage-backed, rolls over at LOCAL midnight (a saved key from
+  // yesterday is dropped, today starts at zero). Matches Cash Stash's canon (see
+  // src/App.jsx's advisorDailyMeter). Scoped by hat.name so Commis / Advisor / Liv Console
+  // each track their own daily spend. Failures are silent (private-browsing/quota) — worst
+  // case the row shows this-session-only totals.
+  const localDateKey = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const dailyStorageKey = `ds-liv-daily.${hat.name || 'liv'}.${localDateKey()}`
+  const readDaily = (): LivUsage => {
+    const zero: LivUsage = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+    if (typeof window === 'undefined' || !window.localStorage) return zero
+    try {
+      const raw = window.localStorage.getItem(dailyStorageKey)
+      if (!raw) return zero
+      const p = JSON.parse(raw)
+      return { input: p.input | 0, output: p.output | 0, cacheCreate: p.cacheCreate | 0, cacheRead: p.cacheRead | 0 }
+    } catch { return zero }
+  }
+  const [daily, setDaily] = useState<LivUsage>(() => readDaily())
   function addUsage(u: LivUsage) {
     setUsage((p) => ({
       input: (p.input || 0) + (u.input || 0),
@@ -516,6 +545,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       cacheRead: (p.cacheRead || 0) + (u.cacheRead || 0),
     }))
     setLastTurn(u)
+    // Rollover-safe: base every daily update on the CURRENT day's storage value (which
+    // returns zero if today's key doesn't exist yet — either fresh install, or the day
+    // just rolled over past local midnight), NOT on the in-memory `daily` accumulator
+    // (which would carry yesterday's cumulative total into today's key on a long-lived
+    // tab open across midnight).
+    setDaily(() => {
+      const today = readDaily()
+      const next: LivUsage = {
+        input: (today.input || 0) + (u.input || 0),
+        output: (today.output || 0) + (u.output || 0),
+        cacheCreate: (today.cacheCreate || 0) + (u.cacheCreate || 0),
+        cacheRead: (today.cacheRead || 0) + (u.cacheRead || 0),
+      }
+      try { window.localStorage.setItem(dailyStorageKey, JSON.stringify(next)) } catch { /* quota/private */ }
+      return next
+    })
   }
 
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
@@ -1312,23 +1357,45 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                             </select>
                           </label>
                         )}
-                        {/* Usage rows — Tummyful canon has Today/Session/Last-turn/Balance.
-                            DS shows Session / Last-turn / Balance here (Daily needs
-                            localStorage-backed rollover and lands in a follow-up). */}
+                        {/* Persona tier selector — Cash Stash Advisor's Standard/Premium pattern.
+                            Only rendered when the hat opts in via hat.tiers + LivChatProps.tier
+                            /onTierChange. Ignored for hats without a tier concept (Commis today). */}
+                        {hat.tiers && hat.tiers.length > 0 && onTierChange && (
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Tier</span>
+                            <select className="ds-input" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+                              value={tier ?? hat.tiers[0].id}
+                              onChange={(e) => onTierChange(e.target.value)}>
+                              {hat.tiers.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                            </select>
+                          </label>
+                        )}
+                        {/* Usage rows — Today / Session / Last Turn / Balance, matching Tummyful
+                            + Cash Stash canon. Today is localStorage-backed, rolls over at local
+                            midnight. Session + Last Turn + Balance are this-tab-only. */}
                         {(() => {
                           const totalTok = (usage.input || 0) + (usage.output || 0)
                           const sessionCost = usageCost(usage, keyInfo.model)
                           const lastTok = lastTurn ? (lastTurn.input || 0) + (lastTurn.output || 0) : 0
                           const lastCost = lastTurn ? usageCost(lastTurn, keyInfo.model) : 0
-                          if (totalTok <= 0) return null
+                          const dailyTok = (daily.input || 0) + (daily.output || 0)
+                          const dailyCost = usageCost(daily, keyInfo.model)
+                          if (totalTok <= 0 && dailyTok <= 0) return null
                           const row = { display: 'flex', justifyContent: 'space-between', gap: 8, ...textStyle('caption') } as CSSProperties
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${cssVar.border}`, paddingTop: 8 }}>
-                              <div style={row}><span style={{ color: cssVar.mid }}>Session</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${sessionCost.toFixed(4)} · {totalTok.toLocaleString()} tok</span></div>
+                              {dailyTok > 0 && (
+                                <div style={row}><span style={{ color: cssVar.mid }}>Today</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${dailyCost.toFixed(4)} · {dailyTok.toLocaleString()} tok</span></div>
+                              )}
+                              {totalTok > 0 && (
+                                <div style={row}><span style={{ color: cssVar.mid }}>Session</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${sessionCost.toFixed(4)} · {totalTok.toLocaleString()} tok</span></div>
+                              )}
                               {lastTurn && lastTok > 0 && (
                                 <div style={row}><span style={{ color: cssVar.mid }}>Last Turn</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${lastCost.toFixed(4)} · {lastTok.toLocaleString()} tok</span></div>
                               )}
-                              <div style={row}><span style={{ color: cssVar.mid }}>Balance</span><span style={{ color: cssVar.dim, fontVariantNumeric: 'tabular-nums' }}>{(usage.input || 0).toLocaleString()} in · {(usage.output || 0).toLocaleString()} out</span></div>
+                              {totalTok > 0 && (
+                                <div style={row}><span style={{ color: cssVar.mid }}>Balance</span><span style={{ color: cssVar.dim, fontVariantNumeric: 'tabular-nums' }}>{(usage.input || 0).toLocaleString()} in · {(usage.output || 0).toLocaleString()} out</span></div>
+                              )}
                             </div>
                           )
                         })()}
