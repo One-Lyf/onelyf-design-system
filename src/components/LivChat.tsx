@@ -1372,7 +1372,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                         )}
                         {/* Usage rows — Today / Session / Last Turn / Balance, matching Tummyful
                             + Cash Stash canon. Today is localStorage-backed, rolls over at local
-                            midnight. Session + Last Turn + Balance are this-tab-only. */}
+                            midnight. Session + Last Turn + Balance are this-tab-only. Rendered
+                            ALWAYS (even at zero) so the Brain menu doesn't look empty on a cold
+                            session — Jeff 2026-08-09: "Brain menu still lacking". Empty rows
+                            show a dimmed em-dash instead of hiding. */}
                         {(() => {
                           const totalTok = (usage.input || 0) + (usage.output || 0)
                           const sessionCost = usageCost(usage, keyInfo.model)
@@ -1380,22 +1383,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                           const lastCost = lastTurn ? usageCost(lastTurn, keyInfo.model) : 0
                           const dailyTok = (daily.input || 0) + (daily.output || 0)
                           const dailyCost = usageCost(daily, keyInfo.model)
-                          if (totalTok <= 0 && dailyTok <= 0) return null
                           const row = { display: 'flex', justifyContent: 'space-between', gap: 8, ...textStyle('caption') } as CSSProperties
+                          const val = (cost: number, tok: number) => tok > 0
+                            ? { text: `$${cost.toFixed(4)} · ${tok.toLocaleString()} tok`, color: cssVar.ink }
+                            : { text: '—', color: cssVar.dim }
+                          const today = val(dailyCost, dailyTok)
+                          const session = val(sessionCost, totalTok)
+                          const last = val(lastCost, lastTok)
+                          const balText = totalTok > 0
+                            ? `${(usage.input || 0).toLocaleString()} in · ${(usage.output || 0).toLocaleString()} out`
+                            : '—'
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, borderTop: `1px solid ${cssVar.border}`, paddingTop: 8 }}>
-                              {dailyTok > 0 && (
-                                <div style={row}><span style={{ color: cssVar.mid }}>Today</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${dailyCost.toFixed(4)} · {dailyTok.toLocaleString()} tok</span></div>
-                              )}
-                              {totalTok > 0 && (
-                                <div style={row}><span style={{ color: cssVar.mid }}>Session</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${sessionCost.toFixed(4)} · {totalTok.toLocaleString()} tok</span></div>
-                              )}
-                              {lastTurn && lastTok > 0 && (
-                                <div style={row}><span style={{ color: cssVar.mid }}>Last Turn</span><span style={{ color: cssVar.ink, fontVariantNumeric: 'tabular-nums' }}>${lastCost.toFixed(4)} · {lastTok.toLocaleString()} tok</span></div>
-                              )}
-                              {totalTok > 0 && (
-                                <div style={row}><span style={{ color: cssVar.mid }}>Balance</span><span style={{ color: cssVar.dim, fontVariantNumeric: 'tabular-nums' }}>{(usage.input || 0).toLocaleString()} in · {(usage.output || 0).toLocaleString()} out</span></div>
-                              )}
+                              <div style={row}><span style={{ color: cssVar.mid }}>Today</span><span style={{ color: today.color, fontVariantNumeric: 'tabular-nums' }}>{today.text}</span></div>
+                              <div style={row}><span style={{ color: cssVar.mid }}>Session</span><span style={{ color: session.color, fontVariantNumeric: 'tabular-nums' }}>{session.text}</span></div>
+                              <div style={row}><span style={{ color: cssVar.mid }}>Last Turn</span><span style={{ color: last.color, fontVariantNumeric: 'tabular-nums' }}>{last.text}</span></div>
+                              <div style={row}><span style={{ color: cssVar.mid }}>Balance</span><span style={{ color: cssVar.dim, fontVariantNumeric: 'tabular-nums' }}>{balText}</span></div>
                             </div>
                           )
                         })()}
