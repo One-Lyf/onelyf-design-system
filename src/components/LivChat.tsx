@@ -574,6 +574,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
   const transcriptRef = useRef<HTMLDivElement>(null)
+  // Auto-follow only when the user is already pinned near the bottom. Without this, every
+  // streamed token yanked the transcript back down mid-read, so scrolling up to re-read the top
+  // of a long reply was impossible. `onTranscriptScroll` keeps `pinnedRef` in sync with the
+  // user's real scroll position; the auto-scroll effect below only follows when pinned.
+  const pinnedRef = useRef(true)
+  const onTranscriptScroll = () => {
+    const el = transcriptRef.current
+    if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Mirrors activeId synchronously so in-flight async work can tell — the instant
@@ -696,8 +705,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
 
   useEffect(() => {
     const el = transcriptRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages, streaming])
+
+  // A session switch (or a freshly loaded chat) should start pinned to the newest message,
+  // regardless of where the user had scrolled in the previous session.
+  useEffect(() => { pinnedRef.current = true }, [activeId])
 
   // Stop any live mic dictation / TTS playback when this chat unmounts (e.g. its
   // host closes the panel) — otherwise the hot mic keeps listening and any
@@ -792,6 +805,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     // Fresh send — any prior abort flag from an earlier turn is stale, don't let it silence
     // a legitimate error this turn.
     userAbortedRef.current = false
+    // The user just sent a turn — jump to and follow the newest message even if they'd scrolled
+    // up to re-read earlier (the auto-follow effect only scrolls when pinned).
+    pinnedRef.current = true
     setSending(true); setMsg('')
 
     let sessionId = activeId
@@ -1123,7 +1139,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
         )}
 
         <div className="lc-main" style={S.main}>
-          <div className="lc-transcript" ref={transcriptRef} style={S.transcript}>
+          <div className="lc-transcript" ref={transcriptRef} style={S.transcript} onScroll={onTranscriptScroll}>
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
                 {hat.glyph && <Glyph variant={hat.glyph} size={64} />}
