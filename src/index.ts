@@ -78,6 +78,10 @@ export {
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
 export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'
+export {
+  default as AppShell,
+  type AppShellProps, type AppShellBrand, type AppShellNav, type AppNavItem,
+} from './components/AppShell'
 
 // Brand reference boards (reference only — not UI building blocks)
 export { default as RootGlyphBoard, type RootGlyphBoardProps } from './components/RootGlyphBoard'
