@@ -11,7 +11,10 @@ export type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'onelyf-theme'
 const VAR_PREFIX = '--ds-'
-const DEFAULT_MODE: ThemeMode = 'dark'
+// Suite default: follow the OS preference on first load, then remember the
+// user's manual choice (per the brand board — dormant/light vs Liv/dark — and
+// Jeff's "system default + toggle" call). Apps still ship <ThemeToggle/>.
+const DEFAULT_MODE: ThemeMode = 'system'
 
 // Broadcast so every mounted ThemeToggle (or other mode-reading component)
 // stays in sync — without this, a second toggle instance on the same page
