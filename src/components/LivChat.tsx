@@ -481,6 +481,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  // Enter sends only on a physical keyboard (fine pointer). On a touch device the Return key inserts
+  // a newline instead, and the user sends with the Send button. Device-static, so read once.
+  const [enterSends] = useState(() => typeof window === 'undefined' || !window.matchMedia?.('(pointer: coarse)')?.matches)
   const [streaming, setStreaming] = useState('')
   // The tool round currently running, shown as an activity line above the
   // streaming text. Null when no tool is mid-flight.
@@ -1007,13 +1010,19 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
 
   // ── styles (inline, token-driven) ──
   const S = {
-    card: { background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, padding: space.md, boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, overflowX: 'hidden' } as CSSProperties,
-    head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.sm } as CSSProperties,
+    // The chat is a FLEX COLUMN: header (fixed) + body (flex, holds the scrolling transcript) +
+    // composer (fixed). `overflow: hidden` + `max-height: 100%` mean that when a parent constrains
+    // the height (the Tummyful dock, or the viewport shrinking as the mobile keyboard opens) the
+    // TRANSCRIPT shrinks and scrolls — the header (Minimize/Close) and composer stay framed, instead
+    // of the whole card scrolling as one block (which hid the header until you scrolled up, and
+    // pushed the composer off-screen). With no parent height (inline) it sizes to content as before.
+    card: { background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, padding: space.md, boxSizing: 'border-box', maxWidth: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: '100%', overflow: 'hidden' } as CSSProperties,
+    head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, flex: '0 0 auto' } as CSSProperties,
     muted: { ...textStyle('caption'), color: cssVar.mid } as CSSProperties,
     // Body is a single-column stack now — the sessions rail is a slide-in drawer over
     // the transcript (Tummyful canon), not a permanent left column. `position: relative`
     // is what the drawer + scrim (both `position: absolute`) anchor to.
-    body: { position: 'relative', marginTop: space.md, minHeight: 320 } as CSSProperties,
+    body: { position: 'relative', marginTop: space.md, flex: '1 1 auto', minHeight: 0 } as CSSProperties,
     rail: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } as CSSProperties,
     sessionRow: { display: 'flex', alignItems: 'center', gap: 4, borderRadius: radius.sm, padding: 2 } as CSSProperties,
     sessionOpen: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, background: 'transparent', border: 0, cursor: 'pointer', color: cssVar.ink, padding: '6px 8px', borderRadius: radius.sm } as CSSProperties,
@@ -1029,8 +1038,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0,
       flex: '0 0 auto',
     } as CSSProperties,
-    main: { display: 'flex', flexDirection: 'column', minWidth: 0 } as CSSProperties,
-    transcript: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: space.sm, padding: space.xs, minHeight: 200, maxHeight: 460 } as CSSProperties,
+    main: { display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, height: '100%' } as CSSProperties,
+    // flex-basis auto + min-height 0: sizes to content when inline (capped at 460), but shrinks and
+    // scrolls when the column is height-constrained (dock / keyboard) so the composer stays visible.
+    transcript: { flex: '1 1 auto', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: space.sm, padding: space.xs, minHeight: 0, maxHeight: 460 } as CSSProperties,
     input: { ...textStyle('body'), width: '100%', boxSizing: 'border-box', color: cssVar.ink, background: cssVar.bg, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '9px 12px' } as CSSProperties,
     primaryBtn: { ...textStyle('label'), background: accent, color: cssVar.onPrimary, border: 0, borderRadius: radius.md, padding: '9px 14px', cursor: 'pointer' } as CSSProperties,
     ghostBtn: { ...textStyle('label'), background: 'transparent', color: cssVar.ink, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '7px 10px', cursor: 'pointer' } as CSSProperties,
@@ -1298,7 +1309,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             })()}
           </div>
 
-          <div style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm }}>
+          <div style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm, flex: '0 0 auto' }}>
             {files.length > 0 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                 {files.map((f, i) => (
@@ -1309,7 +1320,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
               placeholder={hat.placeholder || `Message ${hat.name}…`}
               value={draft} onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing)) { e.preventDefault(); send() } }}
+              onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing, enterSends)) { e.preventDefault(); send() } }}
               rows={1} />
             {/* Toolbar row — canonical order per feedback_liv_chat_canon.md:
                 `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑`. Speaker + mic sit right

@@ -11,6 +11,10 @@
 // every composed word got cut off and sent mid-composition instead of staying
 // in the draft. `isComposing` is exactly the signal for "this Enter belongs to
 // the IME, not the form" (mirrors e.nativeEvent.isComposing on the DOM event).
-export function shouldSendOnEnter(key: string, shiftKey: boolean, isComposing: boolean): boolean {
-  return key === 'Enter' && !shiftKey && !isComposing
+// `enterSends` is false on touch-primary devices (phones/tablets): there, the on-screen keyboard's
+// Return key should insert a NEWLINE and the user sends with the Send button — Jeff: "my keyboard's
+// return button sends the message rather than creating a new row of text." On a physical keyboard
+// (fine pointer) plain Enter still sends, Shift+Enter still newlines.
+export function shouldSendOnEnter(key: string, shiftKey: boolean, isComposing: boolean, enterSends: boolean): boolean {
+  return enterSends && key === 'Enter' && !shiftKey && !isComposing
 }
