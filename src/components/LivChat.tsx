@@ -500,6 +500,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   // speechSynthesis). The mic dictates into the composer via the browser SpeechRecognition API —
   // shown only where that's supported. Both live in the composer toolbar.
   const [handsFree, setHandsFree] = useState(false)
+  // toggleMic's rec.onend closure captures `handsFree` at the moment the recognizer was created.
+  // The toggle turns hands-free ON and starts the mic in the same tick (before the re-render), so
+  // that first utterance's closure would see the stale `false` — its auto-send and loop-restart
+  // never fired, and hands-free looked dead ("takes my voice as text but I have to hit send").
+  // Reading a ref instead keeps onend on the CURRENT value.
+  const handsFreeRef = useRef(handsFree)
+  useEffect(() => { handsFreeRef.current = handsFree }, [handsFree])
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
   // Lets toggleMic's onresult closure notice when `draft` changed for a reason other than its
@@ -961,7 +968,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       // "hands free takes my voice as text but does not transmit it to the chat I have to
       // hit send" (2026-08-09). Without this the speaker toggle only handled the reply
       // half of hands-free (TTS-on-reply), not the send half.
-      if (handsFree && sessionFinal.trim()) {
+      if (handsFreeRef.current && sessionFinal.trim()) {
         const utter = sessionFinal.trim()
         setDraft(''); // clear the composer immediately
         send(utter)
@@ -969,7 +976,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
         // (via adapter.voice.speak → the browser's own speech-out). The 200ms is a small
         // grace; a proper mic-vs-TTS gate would await voice.speak's end, but this covers
         // the common case where the user's speech is quicker than Liv's reply.
-        setTimeout(() => { if (handsFree) toggleMic() }, 200)
+        setTimeout(() => { if (handsFreeRef.current) toggleMic() }, 200)
       }
     }
     rec.onerror = () => { setListening(false); recognitionRef.current = null }
