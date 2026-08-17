@@ -206,6 +206,12 @@ export interface LivChatProps {
   // user-gesture stack frame — iOS TTS audio-session unlock, wake-word dictation start,
   // audio-chime prewarm, etc. Purely optional; DS handles the toggle either way.
   onHandsFreeChange?: (on: boolean) => void
+  // When true, the HOST owns the hands-free microphone and reply-readback (e.g. Tummyful's Commis
+  // runs a wake-word-gated mic + its own Liv-voice TTS). The speaker toggle then becomes a pure
+  // signal: it flips state and fires onHandsFreeChange, but LivChat does NOT start its own built-in
+  // SpeechRecognition (which auto-sends every utterance ungated) and does NOT read replies aloud.
+  // Default false → LivChat's self-contained hands-free (mic + TTS) as before.
+  hostOwnsHandsFreeVoice?: boolean
   // Current persona tier + change handler for the Brain menu's tier dropdown. Ignored when
   // hat.tiers is omitted. Consumer typically persists this via `usePersistedState` (Cash
   // Stash) or a Supabase family setting (Tummyful, once Commis wants it).
@@ -469,7 +475,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, tier, onTierChange }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -872,7 +878,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
           // it's a running total for the console, reset by tapping the meter.
           if (res.usage) addUsage(res.usage)
           // Hands-free: read the reply aloud (app voice, else browser TTS).
-          if (handsFree && acc.trim()) speak(acc)
+          if (handsFree && !hostOwnsHandsFreeVoice && acc.trim()) speak(acc)
         } else if (!userAbortedRef.current) {
           // Suppress this branch entirely on a user-initiated Stop — the message shape can vary
           // per adapter (some resolve with {ok:false, error:{message:'ABORT'}} instead of throwing),
@@ -1512,9 +1518,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                   if (!next) stopSpeaking()
                   // Turning ON: also auto-start the mic so hands-free is one-tap. Turning OFF:
                   // stop the mic if it was running. Both under this same click, so any browser
-                  // that requires a user gesture to grant mic sees this exact tap.
-                  if (next && !listening) toggleMic()
-                  if (!next && listening) recognitionRef.current?.stop()
+                  // that requires a user gesture to grant mic sees this exact tap. Skipped entirely
+                  // when the HOST owns the mic (hostOwnsHandsFreeVoice) — Commis then runs its own
+                  // wake-word-gated recognizer, and LivChat's built-in ungated mic must stay off.
+                  if (!hostOwnsHandsFreeVoice) {
+                    if (next && !listening) toggleMic()
+                    if (!next && listening) recognitionRef.current?.stop()
+                  }
                   return next
                 })}><SpeakerI /></button>
               {speechInSupported && (
