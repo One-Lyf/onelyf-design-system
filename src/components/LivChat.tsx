@@ -582,7 +582,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
   // Whether the composer's Brain popover is open. Canonical Liv-chat placement: the Brain
   // pill (model + API key + usage) lives IN the composer next to attach/mic/send, NOT in
-  // the chat header — see feedback_liv_chat_canon.md (Tummyful is the reference design).
+  // the chat header — see onelyf-planning/docs/liv-chat-canon.md (Tummyful is the reference design).
   const [brainOpen, setBrainOpen] = useState(false)
   const [keyInput, setKeyInput] = useState('')
   const [modelInput, setModelInput] = useState(models[0]?.id ?? 'claude-opus-4-8')
@@ -1105,7 +1105,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               </button>
             )
           })()}
-          {/* Brain pill moved into the composer (see feedback_liv_chat_canon.md — Tummyful's
+          {/* Brain pill moved into the composer (see onelyf-planning/docs/liv-chat-canon.md — Tummyful's
               placement is canon). The header now only carries the token/cost meter + optional
               dock controls; API-key entry, model selector, and usage breakdown all live in the
               composer's Brain popover next to attach/mic/send. */}
@@ -1328,7 +1328,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing, enterSends)) { e.preventDefault(); send() } }}
               rows={1} />
-            {/* Toolbar row — canonical order per feedback_liv_chat_canon.md:
+            {/* Toolbar row — canonical order per onelyf-planning/docs/liv-chat-canon.md:
                 `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑`. Speaker + mic sit right
                 next to the send button. Brain pill holds model + API key + settings that
                 previously lived in the header. */}
