@@ -127,3 +127,35 @@ export function documentFilename(title: string, stamp: string): string {
   const slug = (title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'document'
   return `${slug}-${stamp}.md`
 }
+
+// ─── Decision / options cards ────────────────────────────────────────────────
+// A GENERAL options primitive (livchat-decision-options-cards): Liv can offer a set of
+// labelled choices at any conversational decision point — NOT the per-app, pre-registered
+// action-card system (ACTIONS[card.type]), which needs an app to know each card type ahead
+// of time. Instead Liv emits a fenced ```options block in her reply text (same convention
+// family as the ```document fence), one choice per line; DS parses it out and renders the
+// choices as tappable cards, and tapping one sends that choice back as the next turn. Any
+// hat gets it for free — no app wiring, no registration.
+//
+//   ```options
+//   - Weeknight quick dinners
+//   - Batch-cook for the week
+//   - Something impressive for guests
+//   ```
+//
+// Returns null (render as normal text) when: no fence, or fewer than 2 real choices — a
+// single "option" isn't a decision. Leading bullet markers (-, *, 1.) are stripped so the
+// model can write a natural list. Kept JSX-free for node --test.
+const OPTIONS_FENCE = /```options[^\n]*\n([\s\S]*?)```/
+export function extractOptions(content: string | null | undefined): { text: string; options: string[] } | null {
+  if (!content) return null
+  const m = OPTIONS_FENCE.exec(content)
+  if (!m) return null
+  const options = m[1]
+    .split('\n')
+    .map((l) => l.replace(/^\s*(?:[-*]|\d+[.)])\s+/, '').trim()) // strip a leading bullet / "1." marker
+    .filter(Boolean)
+  if (options.length < 2) return null // 0-1 choices isn't a decision — leave it as plain text
+  const text = (content.slice(0, m.index) + content.slice(m.index + m[0].length)).trim()
+  return { text, options }
+}

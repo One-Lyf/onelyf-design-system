@@ -36,6 +36,20 @@ function delay(ms: number): Promise<void> {
 // usual proposed[] card — a real per-app use case for the DS's document-flagging primitive,
 // round-tripped through the actual rendered <LivChat> (not a hand-copied reimplementation).
 export function commisReplyFor(userText: string): DemoReply {
+  // livchat-decision-options-cards demo: a "help me decide" ask gets a reply whose text
+  // carries an ```options fence (see livChatComposer.ts's extractOptions). DS renders the
+  // choices as tappable cards; tapping one sends that choice as the next turn — round-tripped
+  // through the real rendered <LivChat>, not a hand-copied reimplementation.
+  if (/help me decide|what should i (cook|make)|can't decide/i.test(userText)) {
+    return {
+      text: 'Happy to help — what kind of night is it?\n\n'
+        + '```options\n'
+        + '- Weeknight quick dinner (under 30 min)\n'
+        + '- Batch-cook for the week\n'
+        + '- Something impressive for guests\n'
+        + '```',
+    }
+  }
   if (/meal plan document/i.test(userText)) {
     return {
       text: 'Here\'s your plan for the week — download it below to keep on the counter.\n\n'

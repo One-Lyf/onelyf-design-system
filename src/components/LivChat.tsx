@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, type LivDocument } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, type LivDocument } from './livChatComposer'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -440,6 +440,9 @@ export const livChatStylesheet = `
 .lc-session:hover { background: var(--ds-surface-hi); }
 .lc-session[data-active="true"] { background: color-mix(in srgb, var(--lc-accent) 14%, transparent); }
 .lc-iconbtn:hover:not(:disabled) { background: var(--ds-track); }
+.lc-option { transition: border-color .12s ease, background .12s ease; }
+.lc-option:hover:not(:disabled) { border-color: var(--lc-accent); background: var(--ds-surface-hi); }
+.lc-option { animation: lc-fade-in .18s ease; }
 .lc-copy { opacity: 0; transition: opacity .12s ease; }
 .lc-bubble:hover .lc-copy, .lc-copy:focus-visible { opacity: 1; }
 /* Sessions rail is an expandable left SIDEBAR (Tummyful canon — Jeff 2026-08-09:
@@ -1280,6 +1283,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               // convention). Only checked on liv turns — a user's own message is never
               // parsed as a document, even if it happens to contain a ```document fence.
               const doc = m.role === 'liv' ? extractDocument(m.content) : null
+              // livchat-decision-options-cards: a liv reply can offer labelled choices via an
+              // ```options fence; DS renders them as tappable cards and a tap sends that choice
+              // as the next turn. Always PARSED on liv turns (so the raw fence is stripped from
+              // the transcript even on older messages), but only the MOST-RECENT message's cards
+              // stay tappable — stale choices from an earlier turn shouldn't re-fire once the
+              // conversation has moved on. Documents take precedence in the rare both-fence case.
+              const isLast = m.id === messages[messages.length - 1]?.id
+              const opts = !doc && m.role === 'liv' ? extractOptions(m.content) : null
+              const optionsLive = !!opts && isLast && !sending
               return (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1300,7 +1312,27 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                     ))}
                   </div>
                 )}
-                {doc ? (
+                {opts ? (
+                  <>
+                    {opts.text && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}>{opts.text}</div>}
+                    <div className="lc-options" role="group" aria-label="Choose an option" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {opts.options.map((label, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="lc-option ds-btn"
+                          disabled={!optionsLive}
+                          onClick={() => { if (optionsLive) send(label) }}
+                          style={{ ...textStyle('bodySm'), textAlign: 'left', color: cssVar.ink, background: cssVar.surface,
+                            border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '9px 12px',
+                            cursor: optionsLive ? 'pointer' : 'default', opacity: optionsLive ? 1 : 0.55 }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : doc ? (
                   <>
                     {doc.text && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}>{doc.text}</div>}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '8px 10px', background: cssVar.surface }}>
