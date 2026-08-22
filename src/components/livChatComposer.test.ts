@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename } from './livChatComposer.ts'
 
 // enterSends = true on a physical keyboard (fine pointer); false on a touch device.
 test('plain Enter sends on a physical keyboard (enterSends=true)', () => {
@@ -136,4 +136,46 @@ test('empty conversation still produces a valid (header-only) document', () => {
 test('transcriptFilename is filesystem-safe and slugged from the hat name', () => {
   assert.equal(transcriptFilename('Cash Stash Advisor', '2026-08-21-1930'), 'cash-stash-advisor-conversation-2026-08-21-1930.md')
   assert.equal(transcriptFilename('', '2026-08-21'), 'liv-conversation-2026-08-21.md')
+})
+
+// ── extractDocument / documentFilename — livchat-document-creation ──
+test('a fenced document block with a title is extracted, and stripped from the surrounding text', () => {
+  const content = 'Here you go:\n\n```document Weekly Meal Plan\n# Weekly Meal Plan\n- Mon: stir-fry\n```'
+  const r = extractDocument(content)
+  assert.equal(r?.text, 'Here you go:')
+  assert.equal(r?.document.title, 'Weekly Meal Plan')
+  assert.equal(r?.document.content, '# Weekly Meal Plan\n- Mon: stir-fry')
+})
+
+test('no fence in the content → null, not an error', () => {
+  assert.equal(extractDocument('just a normal reply'), null)
+  assert.equal(extractDocument(''), null)
+  assert.equal(extractDocument(null), null)
+  assert.equal(extractDocument(undefined), null)
+})
+
+test('a fence with no title falls back to "Document"', () => {
+  const r = extractDocument('```document\nbody text\n```')
+  assert.equal(r?.document.title, 'Document')
+})
+
+test('text before AND after the fence is preserved (joined, trimmed)', () => {
+  const r = extractDocument('intro\n```document Notes\nbody\n```\noutro')
+  assert.equal(r?.text, 'intro\n\noutro')
+})
+
+test('an empty fence body yields no document (not a blank download)', () => {
+  assert.equal(extractDocument('```document Empty\n\n```'), null)
+})
+
+test('only the FIRST fence is treated as the document (v1 scope: one per reply)', () => {
+  const r = extractDocument('```document First\none\n```\nmore text\n```document Second\ntwo\n```')
+  assert.equal(r?.document.title, 'First')
+  assert.ok(r?.text.includes('```document Second'))
+})
+
+test('documentFilename is filesystem-safe and slugged from the title', () => {
+  assert.equal(documentFilename('Weekly Meal Plan', '2026-08-22-0200'), 'weekly-meal-plan-2026-08-22-0200.md')
+  assert.equal(documentFilename('', '2026-08-22'), 'document-2026-08-22.md')
+  assert.equal(documentFilename('!!!', '2026-08-22'), 'document-2026-08-22.md')
 })
