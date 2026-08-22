@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions } from './livChatComposer.ts'
 
 // enterSends = true on a physical keyboard (fine pointer); false on a touch device.
 test('plain Enter sends on a physical keyboard (enterSends=true)', () => {
@@ -178,4 +178,39 @@ test('documentFilename is filesystem-safe and slugged from the title', () => {
   assert.equal(documentFilename('Weekly Meal Plan', '2026-08-22-0200'), 'weekly-meal-plan-2026-08-22-0200.md')
   assert.equal(documentFilename('', '2026-08-22'), 'document-2026-08-22.md')
   assert.equal(documentFilename('!!!', '2026-08-22'), 'document-2026-08-22.md')
+})
+
+// ── extractOptions — general decision/options cards (livchat-decision-options-cards) ──
+test('an options fence with 2+ choices is parsed and stripped from the surrounding text', () => {
+  const content = 'What are you in the mood for?\n\n```options\n- Weeknight quick dinners\n- Batch-cook for the week\n- Something for guests\n```'
+  const r = extractOptions(content)
+  assert.equal(r?.text, 'What are you in the mood for?')
+  assert.deepEqual(r?.options, ['Weeknight quick dinners', 'Batch-cook for the week', 'Something for guests'])
+})
+
+test('leading bullet / numbered markers are stripped so the model can write a natural list', () => {
+  assert.deepEqual(extractOptions('```options\n1. First\n2) Second\n* Third\n```')?.options, ['First', 'Second', 'Third'])
+})
+
+test('fewer than 2 real choices is NOT a decision → null (rendered as plain text)', () => {
+  assert.equal(extractOptions('```options\n- Only one\n```'), null)
+  assert.equal(extractOptions('```options\n\n```'), null)
+})
+
+test('no fence / empty content → null, not an error', () => {
+  assert.equal(extractOptions('just a normal reply'), null)
+  assert.equal(extractOptions(''), null)
+  assert.equal(extractOptions(null), null)
+  assert.equal(extractOptions(undefined), null)
+})
+
+test('text before AND after the fence is preserved (joined, trimmed)', () => {
+  const r = extractOptions('Pick one:\n```options\n- A\n- B\n```\nI can expand on any.')
+  assert.equal(r?.text, 'Pick one:\n\nI can expand on any.')
+  assert.deepEqual(r?.options, ['A', 'B'])
+})
+
+test('blank lines between choices are ignored, real choices kept', () => {
+  const r = extractOptions('```options\n- A\n\n- B\n\n\n- C\n```')
+  assert.deepEqual(r?.options, ['A', 'B', 'C'])
 })
