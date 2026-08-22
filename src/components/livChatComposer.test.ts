@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename } from './livChatComposer.ts'
 
 // enterSends = true on a physical keyboard (fine pointer); false on a touch device.
 test('plain Enter sends on a physical keyboard (enterSends=true)', () => {
@@ -81,4 +81,59 @@ test('prior liv turns in history do NOT block the partial — only the LAST mess
 test('empty transcript (abort on the throw path before reload state) still yields the partial', () => {
   const r = partialTurnToAppend(true, 'a partial', [], ID)
   assert.equal(r?.content, 'a partial')
+})
+
+// ── transcriptToMarkdown — whole-conversation export (livchat-transcript-share-export) ──
+test('renders every turn in order with role headers and a title', () => {
+  const md = transcriptToMarkdown(
+    [
+      { role: 'user', content: 'What can I cook?' },
+      { role: 'liv', content: 'How about a stir-fry?' },
+      { role: 'user', content: 'Sounds good' },
+    ],
+    { hatName: 'Commis' },
+  )
+  assert.equal(md, [
+    '# Conversation with Commis',
+    '',
+    '**You:**',
+    '',
+    'What can I cook?',
+    '',
+    '**Commis:**',
+    '',
+    'How about a stir-fry?',
+    '',
+    '**You:**',
+    '',
+    'Sounds good',
+    '',
+  ].join('\n').trimEnd() + '\n')
+})
+
+test('a custom title overrides the default header', () => {
+  const md = transcriptToMarkdown([{ role: 'user', content: 'hi' }], { hatName: 'Liv', title: 'My chat' })
+  assert.ok(md.startsWith('# My chat\n'))
+})
+
+test('an image-only turn (attachments, no text) is not silently dropped', () => {
+  const md = transcriptToMarkdown([{ role: 'user', content: '', attachments: [{ path: 'x' }] }], { hatName: 'Liv' })
+  assert.ok(md.includes('_(attachment)_'))
+  const mdStr = transcriptToMarkdown([{ role: 'user', content: null, attachments: '[{"path":"x"}]' }], { hatName: 'Liv' })
+  assert.ok(mdStr.includes('_(attachment)_'))
+})
+
+test('a truly empty turn is marked, not dropped, so turn count is preserved', () => {
+  const md = transcriptToMarkdown([{ role: 'liv', content: '' }], { hatName: 'Liv' })
+  assert.ok(md.includes('_(no text)_'))
+})
+
+test('empty conversation still produces a valid (header-only) document', () => {
+  const md = transcriptToMarkdown([], { hatName: 'Liv' })
+  assert.equal(md, '# Conversation with Liv\n')
+})
+
+test('transcriptFilename is filesystem-safe and slugged from the hat name', () => {
+  assert.equal(transcriptFilename('Cash Stash Advisor', '2026-08-21-1930'), 'cash-stash-advisor-conversation-2026-08-21-1930.md')
+  assert.equal(transcriptFilename('', '2026-08-21'), 'liv-conversation-2026-08-21.md')
 })

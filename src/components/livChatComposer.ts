@@ -55,3 +55,35 @@ export function partialTurnToAppend(
   if (last && last.role === 'liv') return null
   return { id: makeId(), role: 'liv', modality: 'text', content }
 }
+
+// ─── Export a whole conversation as Markdown ─────────────────────────────────
+// Renders the full transcript (all turns, in order) as a readable Markdown document
+// for download — the conversation-level counterpart to the per-turn copy button.
+// Pure so it unit-tests under `node --test`; LivChat wraps the result in a Blob and
+// triggers a download. LivMessage carries no timestamp, so none is emitted (the gate
+// asks for timestamps only "if available"); a message with attachments but no text
+// gets a bracketed placeholder so the turn isn't silently dropped.
+export function transcriptToMarkdown(
+  messages: ReadonlyArray<{ role: string; content?: string | null; attachments?: unknown }>,
+  opts: { hatName: string; title?: string },
+): string {
+  const name = opts.hatName || 'Liv'
+  const out: string[] = [`# ${opts.title || `Conversation with ${name}`}`, '']
+  for (const m of messages) {
+    const who = m.role === 'liv' ? name : 'You'
+    const text = (m.content || '').trim()
+    const hasAttach = Array.isArray(m.attachments) ? m.attachments.length > 0
+      : typeof m.attachments === 'string' ? m.attachments.trim().length > 2 // not "" / "[]"
+      : false
+    const body = text || (hasAttach ? '_(attachment)_' : '_(no text)_')
+    out.push(`**${who}:**`, '', body, '')
+  }
+  return out.join('\n').trimEnd() + '\n'
+}
+
+// A filesystem-safe, human-readable filename for a downloaded transcript. `stamp` is
+// passed in (not read from Date here — keeps this pure/testable); LivChat supplies it.
+export function transcriptFilename(hatName: string, stamp: string): string {
+  const slug = (hatName || 'liv').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'liv'
+  return `${slug}-conversation-${stamp}.md`
+}
