@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename } from './livChatComposer'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -346,6 +346,7 @@ const TrashI = () => <svg {...svg}><polyline points="3 6 5 6 21 6" /><path d="M1
 const CopyI = () => <svg {...svg}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
 const CheckI = () => <svg {...svg}><polyline points="20 6 9 17 4 12" /></svg>
 const MenuI = () => <svg {...svg}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+const DownloadI = () => <svg {...svg}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 
 function ChannelIcon({ channel }: { channel?: string }) {
   if (channel === 'phone') return <PhoneI />
@@ -1025,6 +1026,33 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     } catch { setMsg('Could not copy — clipboard access was blocked.') }
   }
 
+  // Export the whole open conversation as a downloaded Markdown file (the conversation-level
+  // counterpart to per-turn copy). The transcript rendering is the pure transcriptToMarkdown
+  // helper; this just wraps it in a Blob and clicks a temporary <a download>. No-op with an
+  // empty transcript (the affordance is disabled there anyway).
+  function downloadTranscript() {
+    if (!messages.length) return
+    try {
+      const md = transcriptToMarkdown(messages, { hatName: hat.name })
+      const d = new Date()
+      const p = (n: number) => String(n).padStart(2, '0')
+      const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = transcriptFilename(hat.name, stamp)
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Revoke on the next tick so the download has grabbed the blob first.
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (e) {
+      console.error('transcript export failed', e)
+      setMsg('Could not export the conversation.')
+    }
+  }
+
   async function saveKey() {
     if (!adapter.key) return
     const patch: { apiKey?: string; model?: string } = {}
@@ -1103,6 +1131,19 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
             <MenuI /> History{sessions.length ? ` (${sessions.length})` : ''}
+          </button>
+          {/* Export the whole conversation as a Markdown download (conversation-level counterpart
+              to the per-turn copy button). Disabled until there's something to export. */}
+          <button
+            type="button"
+            className="lc-iconbtn"
+            style={{ ...S.iconbtn, opacity: messages.length ? 1 : 0.4 }}
+            disabled={!messages.length}
+            aria-label="Export conversation"
+            title="Export this conversation (Markdown)"
+            onClick={downloadTranscript}
+          >
+            <DownloadI />
           </button>
         </div>
         <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
