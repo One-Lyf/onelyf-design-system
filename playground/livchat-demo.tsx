@@ -100,7 +100,7 @@ function LivChatDemo() {
     emptyText: 'Nothing cooking yet.',
     description: 'Your kitchen co-pilot.',
     pills: ['recipes', 'meal plan', 'pantry'],
-    suggestions: ['What can I cook tonight?'],
+    suggestions: ['What can I cook tonight?', 'Write me a meal plan document for the week'],
     toolLabels: { save_recipe: 'Writing your recipe' },
   }
 

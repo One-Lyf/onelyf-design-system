@@ -30,7 +30,26 @@ function delay(ms: number): Promise<void> {
 // Deterministic canned reply for the Commis (Tummyful, kitchen-domain) hat — mirrors the
 // shape `askCommisAuto` returns today: reply text + queued proposed[] in one round trip
 // (docs/liv-chat-adapter-v2.md §2.2).
+//
+// livchat-document-creation demo: a "meal plan document" ask gets a reply whose text
+// contains a ```document fence (see livChatComposer.ts's extractDocument) instead of the
+// usual proposed[] card — a real per-app use case for the DS's document-flagging primitive,
+// round-tripped through the actual rendered <LivChat> (not a hand-copied reimplementation).
 export function commisReplyFor(userText: string): DemoReply {
+  if (/meal plan document/i.test(userText)) {
+    return {
+      text: 'Here\'s your plan for the week — download it below to keep on the counter.\n\n'
+        + '```document Weekly Meal Plan\n'
+        + '# Weekly Meal Plan\n\n'
+        + '- **Mon** — Chicken Stir-Fry\n'
+        + '- **Tue** — Sheet-Pan Salmon\n'
+        + '- **Wed** — Black Bean Tacos\n'
+        + '- **Thu** — Leftovers\n'
+        + '- **Fri** — Pizza Night\n'
+        + '```',
+      toolActivity: { name: 'save_recipe', summary: 'Drafted: Weekly Meal Plan' },
+    }
+  }
   return {
     text: `Here's a plan for "${userText}".`,
     toolActivity: { name: 'save_recipe', summary: 'Saved: Chicken Stir-Fry' },

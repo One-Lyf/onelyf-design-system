@@ -87,3 +87,43 @@ export function transcriptFilename(hatName: string, stamp: string): string {
   const slug = (hatName || 'liv').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'liv'
   return `${slug}-conversation-${stamp}.md`
 }
+
+// ─── Document creation (livchat-document-creation) — v1: a fenced block convention ──
+// Liv flags a reply as a real, downloadable document (a meal plan, a budget summary, a
+// generated recipe) rather than a wall of chat text the user has to manually copy and
+// reformat, by wrapping it in a fenced block whose info string is `document` followed by
+// an optional title on the same line — the same shape a model already reaches for with a
+// normal ```lang code fence, so it needs no new output format to learn:
+//
+//   ```document Weekly Meal Plan
+//   # Weekly Meal Plan
+//   ...
+//   ```
+//
+// v1 deliberately supports ONE document per reply (the first fence found) — this is the
+// "structured export" half the node's own notes called out as shippable first, not the
+// full Artifacts-style live-rendered panel (livchat-artifacts-system, still open). Each
+// app's backend/system-prompt decides WHEN to emit this fence (that's app business logic,
+// outside the DS); LivChat's job is only to notice one and render/download it distinctly.
+export interface LivDocument { title: string; content: string }
+
+const DOCUMENT_FENCE = /```document([^\n]*)\n([\s\S]*?)```/
+
+export function extractDocument(content: string | null | undefined): { text: string; document: LivDocument } | null {
+  if (!content) return null
+  const m = DOCUMENT_FENCE.exec(content)
+  if (!m) return null
+  const body = m[2].trim()
+  if (!body) return null // an empty fence is treated as no document, not a blank one
+  const title = m[1].trim() || 'Document'
+  const text = (content.slice(0, m.index) + content.slice(m.index + m[0].length)).trim()
+  return { text, document: { title, content: body } }
+}
+
+// A filesystem-safe, human-readable filename for a downloaded document, slugged from its
+// title (falls back to "document" for an empty/all-punctuation title, same pattern as
+// transcript export's own hat-name fallback).
+export function documentFilename(title: string, stamp: string): string {
+  const slug = (title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'document'
+  return `${slug}-${stamp}.md`
+}

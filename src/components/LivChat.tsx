@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, type LivDocument } from './livChatComposer'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -347,6 +347,7 @@ const CopyI = () => <svg {...svg}><rect x="9" y="9" width="13" height="13" rx="2
 const CheckI = () => <svg {...svg}><polyline points="20 6 9 17 4 12" /></svg>
 const MenuI = () => <svg {...svg}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
 const DownloadI = () => <svg {...svg}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+const FileTextI = () => <svg {...svg}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
 
 function ChannelIcon({ channel }: { channel?: string }) {
   if (channel === 'phone') return <PhoneI />
@@ -1053,6 +1054,28 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     }
   }
 
+  // Download a single flagged document (livchat-document-creation) — Blob + temporary <a
+  // download>, the same mechanism a whole-transcript export would use.
+  function downloadDocument(doc: LivDocument) {
+    try {
+      const d = new Date()
+      const p = (n: number) => String(n).padStart(2, '0')
+      const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+      const blob = new Blob([doc.content], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = documentFilename(doc.title, stamp)
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (e) {
+      console.error('document download failed', e)
+      setMsg('Could not download this document.')
+    }
+  }
+
   async function saveKey() {
     if (!adapter.key) return
     const patch: { apiKey?: string; model?: string } = {}
@@ -1251,7 +1274,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                 )}
               </div>
             )}
-            {messages.map((m) => (
+            {messages.map((m) => {
+              // livchat-document-creation: a liv reply can flag part of itself as a real,
+              // downloadable document (see extractDocument's own comment for the fence
+              // convention). Only checked on liv turns — a user's own message is never
+              // parsed as a document, even if it happens to contain a ```document fence.
+              const doc = m.role === 'liv' ? extractDocument(m.content) : null
+              return (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{m.role === 'liv' ? hat.name : 'You'}</span>
@@ -1271,9 +1300,23 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                     ))}
                   </div>
                 )}
-                {m.content && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.content}</div>}
+                {doc ? (
+                  <>
+                    {doc.text && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}>{doc.text}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '8px 10px', background: cssVar.surface }}>
+                      <FileTextI />
+                      <span style={{ ...textStyle('bodySm'), flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.document.title}</span>
+                      <button type="button" className="lc-iconbtn" style={S.iconbtn} title="Download this document (Markdown)" aria-label={`Download ${doc.document.title}`} onClick={() => downloadDocument(doc.document)}>
+                        <DownloadI />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  m.content && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.content}</div>
+                )}
               </div>
-            ))}
+              )
+            })}
             {(streaming || toolActivity) && (
               <div className="lc-bubble" style={bubbleStyle('liv')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
