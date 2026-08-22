@@ -22,6 +22,7 @@ import {
 import { cssVar } from '../src/theme'
 import {
   advisorReplyFor, commisReplyFor, createDemoAdapter, createInMemoryLivBackend,
+  createStreamingDemoAdapter,
   type DemoProposedAction,
 } from './livchatDemoAdapters'
 
@@ -69,7 +70,7 @@ function useDemoActionQueue(replyFor: (text: string) => ReturnType<typeof commis
 function DemoPanel({ hat, adapter, queue, actions }: {
   hat: LivHat
   adapter: ReturnType<typeof useDemoActionQueue>['adapter']
-  queue: LivActionQueue
+  queue?: LivActionQueue
   actions?: LivChatAction[]
 }) {
   return (
@@ -85,6 +86,11 @@ function DemoPanel({ hat, adapter, queue, actions }: {
 function LivChatDemo() {
   const commis = useDemoActionQueue(commisReplyFor)
   const advisor = useDemoActionQueue(advisorReplyFor)
+  // Interrupt-a-turn harness: a slow word-by-word stream with a working Stop (abort) port, whose
+  // backend does NOT persist a cancelled reply — so the partial that survives in the transcript
+  // proves LivChat's own partial-commit (livchat-interrupt-turn gate).
+  const streamBackend = useMemo(() => createInMemoryLivBackend(), [])
+  const streamAdapter = useMemo(() => createStreamingDemoAdapter(streamBackend), [streamBackend])
 
   const commisHat: LivHat = {
     name: 'Commis',
@@ -108,6 +114,15 @@ function LivChatDemo() {
     pills: ['budget', 'transactions'],
     suggestions: ['Categorize my spending'],
     toolLabels: { categorize_transaction: 'Categorizing' },
+  }
+
+  const streamHat: LivHat = {
+    name: 'Liv',
+    subtitle: 'interrupt demo',
+    accent: '#4c8bf5',
+    placeholder: 'Send a message, then press Stop mid-reply…',
+    emptyText: 'Send anything — the reply streams slowly so you can Stop it.',
+    description: 'Slow-stream harness for the interrupt-a-turn gate.',
   }
 
   const advisorActions: LivChatAction[] = [
@@ -141,6 +156,7 @@ function LivChatDemo() {
       <div style={{ display: 'flex', gap: space.lg, flexWrap: 'wrap' }}>
         <DemoPanel hat={commisHat} adapter={commis.adapter} queue={commis.queue} />
         <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} />
+        <DemoPanel hat={streamHat} adapter={streamAdapter} />
       </div>
     </div>
   )

@@ -68,6 +68,45 @@ export function advisorReplyFor(userText: string): DemoReply {
   }
 }
 
+// A deliberately SLOW, word-by-word streaming adapter with a working abort() port — the harness
+// for the `livchat-interrupt-turn` gate. Each word is a separate onChunk delta with a delay, so a
+// human (or a Playwright drive) has a real mid-stream window to hit Stop. On abort it swallows the
+// cancel and resolves {ok:false} (the canonical adapter shape) and — importantly — does NOT persist
+// the assistant reply to the backend, simulating a generation that was cut off server-side. That
+// forces the surviving partial in the transcript to come from LivChat's own partial-commit (see
+// partialTurnToAppend), which is exactly what the gate requires: "the partial turn persists".
+export function createStreamingDemoAdapter(backend: InMemoryLivBackend): LivChatAdapter {
+  let ac: AbortController | null = null
+  return {
+    sessions: backend.sessions,
+    messages: backend.messages,
+    chat: {
+      async send({ sessionId, text }, onChunk): Promise<LivChatSendResult> {
+        backend.appendMessage(sessionId, { id: backend.nextMessageId(), role: 'user', content: text })
+        ac = new AbortController()
+        const signal = ac.signal
+        const words = (`You said "${text}". Here is a deliberately slow, word-by-word streamed reply `
+          + `so there is time to press Stop mid-stream and watch the partial answer stay put in the `
+          + `transcript instead of vanishing.`).split(' ')
+        let acc = ''
+        let first = true
+        for (const w of words) {
+          if (signal.aborted) return { ok: false, error: { message: 'ABORT' } }
+          const delta = first ? w : ' ' + w
+          first = false
+          acc += delta
+          onChunk(delta)
+          await delay(120)
+        }
+        // Only reached when NOT aborted — persist the full reply like a real backend would.
+        backend.appendMessage(sessionId, { id: backend.nextMessageId(), role: 'liv', content: acc })
+        return { ok: true, usage: { input: 40, output: words.length } }
+      },
+      abort() { ac?.abort() },
+    },
+  }
+}
+
 export interface InMemoryLivBackend {
   sessions: LivChatAdapter['sessions']
   messages: LivChatAdapter['messages']
