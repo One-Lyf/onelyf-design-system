@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend } from './livChatComposer'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -832,6 +832,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
     // is that first exchange, refresh the rail again shortly after so the smart
     // title (generated in the background, server-side) appears without a reload.
     const isFirstExchange = messages.length === 0
+    // Declared out here (not inside the try) so the catch/abort path can also read whatever text
+    // streamed in before a mid-stream Stop — see partialTurnToAppend below.
+    let acc = ''
 
     try {
       if (!sessionId) {
@@ -861,7 +864,6 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       if (fileRef.current) fileRef.current.value = ''
 
       if (stillActive()) { setStreaming(''); setToolActivity(null) }
-      let acc = ''
       const res = await adapter.chat.send({ sessionId, text, files: sentFiles }, (chunk) => {
         if (!stillActive()) return
         if (typeof chunk === 'string') { acc += chunk; setStreaming(acc) }
@@ -894,7 +896,16 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
         }
       }
       const r = await adapter.messages.list(sessionId)
-      if (stillActive() && r.ok) { setMessages(r.value.messages); resolveUrls(r.value.messages) }
+      if (stillActive() && r.ok) {
+        // If the user hit Stop mid-stream, keep the partial reply that already arrived (matching
+        // Claude — the text you already got stays). Appended to the SERVER-reloaded list, with a
+        // dedup guard inside partialTurnToAppend so a backend that itself persisted the partial
+        // doesn't produce a second identical bubble.
+        const partial = partialTurnToAppend(userAbortedRef.current, acc, r.value.messages,
+          () => `partial-${sessionId}-${Math.round(performance.now())}`)
+        const next = partial ? [...r.value.messages, partial] : r.value.messages
+        setMessages(next); resolveUrls(next)
+      }
       // The server-confirmed message(s) just replaced the optimistic one above, so
       // its local blob preview URL(s) are no longer referenced anywhere — revoke
       // them instead of leaking them for the life of the session.
@@ -920,7 +931,18 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       if (!aborted) console.error('chat send threw', e)
       if (stillActive()) {
         setStreaming(''); setToolActivity(null)
-        if (!aborted) setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
+        if (aborted) {
+          // Adapter threw (AbortError) instead of resolving {ok:false}; still keep whatever
+          // streamed so far as a partial assistant turn. There's no server reload on this path,
+          // so append to the current transcript state.
+          setMessages((m) => {
+            const partial = partialTurnToAppend(true, acc, m,
+              () => `partial-${sessionId}-${Math.round(performance.now())}`)
+            return partial ? [...m, partial] : m
+          })
+        } else {
+          setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
+        }
       }
     } finally { setSending(false) }
   }
