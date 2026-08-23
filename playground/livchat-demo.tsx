@@ -83,9 +83,38 @@ function DemoPanel({ hat, adapter, queue, actions }: {
   )
 }
 
+// Full-screen (maximize) dock harness: ONE <LivChat> whose `dock` toggles between 'panel' and
+// 'full' via the header maximize/restore button (wired to onMaximize/onRestore). In 'panel' it
+// sits inside this 640px box; in 'full' it escapes to a fixed full-viewport overlay (position:fixed
+// inset:0) — proving the geometry clears the host box with no host change. The instance stays
+// mounted across the toggle, so the conversation + draft survive the state change.
+function DockDemoPanel({ hat, adapter }: {
+  hat: LivHat
+  adapter: ReturnType<typeof useDemoActionQueue>['adapter']
+}) {
+  const [dock, setDock] = useState<'panel' | 'full'>('panel')
+  return (
+    <div style={{
+      flex: '1 1 380px', minWidth: 340, maxWidth: 480, height: 640, position: 'relative',
+      border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, overflow: 'hidden',
+    }}>
+      <LivChat
+        hat={hat}
+        adapter={adapter}
+        dock={dock}
+        onMaximize={() => setDock('full')}
+        onRestore={() => setDock('panel')}
+      />
+    </div>
+  )
+}
+
 function LivChatDemo() {
   const commis = useDemoActionQueue(commisReplyFor)
   const advisor = useDemoActionQueue(advisorReplyFor)
+  // Full-screen dock demo: an independent backend/adapter so it doesn't share state with the panels.
+  const dockBackend = useMemo(() => createInMemoryLivBackend(), [])
+  const dockAdapter = useMemo(() => createDemoAdapter(dockBackend, commisReplyFor, () => {}), [dockBackend])
   // Interrupt-a-turn harness: a slow word-by-word stream with a working Stop (abort) port, whose
   // backend does NOT persist a cancelled reply — so the partial that survives in the transcript
   // proves LivChat's own partial-commit (livchat-interrupt-turn gate).
@@ -125,6 +154,15 @@ function LivChatDemo() {
     description: 'Slow-stream harness for the interrupt-a-turn gate.',
   }
 
+  const dockHat: LivHat = {
+    name: 'Liv',
+    subtitle: 'full-screen demo',
+    accent: '#6a53d1',
+    placeholder: 'Use the header maximize button to go full-screen…',
+    emptyText: 'Tap the maximize icon in the header — this card fills the whole viewport.',
+    description: 'Full-screen (maximize) dock harness — toggle it with the header maximize/restore button.',
+  }
+
   const advisorActions: LivChatAction[] = [
     {
       id: 'manual-add-to-budget',
@@ -157,6 +195,7 @@ function LivChatDemo() {
         <DemoPanel hat={commisHat} adapter={commis.adapter} queue={commis.queue} />
         <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} />
         <DemoPanel hat={streamHat} adapter={streamAdapter} />
+        <DockDemoPanel hat={dockHat} adapter={dockAdapter} />
       </div>
     </div>
   )
