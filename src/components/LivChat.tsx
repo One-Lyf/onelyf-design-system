@@ -894,7 +894,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
           const em = res.error?.message
           if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
             if (showKey) setBrainOpen(true)
-            setMsg('Add your Anthropic key so ' + hat.name + ' can reply. Your message is saved either way.')
+            setMsg('Add your API key so ' + hat.name + ' can reply. Your message is saved either way.')
           } else {
             setMsg(em || (hat.name + " couldn't reply."))
           }
@@ -1510,13 +1510,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                       }}>
                         <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
                         <p style={{ ...S.muted, margin: 0 }}>
-                          {hat.name} replies using <strong>your own Anthropic key</strong>.
+                          {hat.name} replies using <strong>your own API key</strong>.
                           {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
                         </p>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <span style={{ ...textStyle('caption'), color: cssVar.mid }}>API Key</span>
                           <input className="ds-input" type="password" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
-                            placeholder={keyInfo.hasKey ? 'Replace key (sk-ant-…)' : 'Anthropic key (sk-ant-…)'}
+                            placeholder={keyInfo.hasKey ? 'Replace key (sk-ant-…)' : 'API key (sk-ant-…)'}
                             value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
                         </label>
                         {models.length > 1 && (
