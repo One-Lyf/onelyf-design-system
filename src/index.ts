@@ -83,6 +83,11 @@ export {
   type AppShellProps, type AppShellBrand, type AppShellNav, type AppNavItem,
 } from './components/AppShell'
 export { default as LivDock, type LivDockProps } from './components/LivDock'
+export {
+  default as ReorderableTiles, reorderableTilesStylesheet, type ReorderableTilesProps,
+} from './components/ReorderableTiles'
+// Canonical dashboard tile-reorder hook (for apps that render tiles themselves).
+export { useTileReorder, mergeOrder } from './useTileReorder'
 
 // Brand reference boards (reference only — not UI building blocks)
 export { default as RootGlyphBoard, type RootGlyphBoardProps } from './components/RootGlyphBoard'
