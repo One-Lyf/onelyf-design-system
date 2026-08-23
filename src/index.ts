@@ -82,6 +82,7 @@ export {
   default as AppShell,
   type AppShellProps, type AppShellBrand, type AppShellNav, type AppNavItem,
 } from './components/AppShell'
+export { default as LivDock, type LivDockProps } from './components/LivDock'
 
 // Brand reference boards (reference only — not UI building blocks)
 export { default as RootGlyphBoard, type RootGlyphBoardProps } from './components/RootGlyphBoard'
