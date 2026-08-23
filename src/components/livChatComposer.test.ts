@@ -174,6 +174,21 @@ test('only the FIRST fence is treated as the document (v1 scope: one per reply)'
   assert.ok(r?.text.includes('```document Second'))
 })
 
+test('a nested code sample inside the document body is NOT truncated at its own closing fence (the bug this fixes)', () => {
+  // Before the fix, the non-greedy regex closed on the nested ```js block's OWN closing
+  // ```, so "More context after the snippet" silently vanished into the surrounding text
+  // (and the leftover raw ```js/``` markers leaked into the chat bubble as garbled text).
+  const content = '```document Setup Steps\n# Setup Steps\n```js\nconsole.log("hi")\n```\nMore context after the snippet\n```'
+  const r = extractDocument(content)
+  assert.equal(r?.document.title, 'Setup Steps')
+  assert.equal(r?.document.content, '# Setup Steps\n```js\nconsole.log("hi")\n```\nMore context after the snippet')
+  assert.equal(r?.text, '')
+})
+
+test('a nested fence that never closes (malformed) yields no document rather than a wrong truncation', () => {
+  assert.equal(extractDocument('```document Broken\nbody\n```js\nunclosed'), null)
+})
+
 test('documentFilename is filesystem-safe and slugged from the title', () => {
   assert.equal(documentFilename('Weekly Meal Plan', '2026-08-22-0200'), 'weekly-meal-plan-2026-08-22-0200.md')
   assert.equal(documentFilename('', '2026-08-22'), 'document-2026-08-22.md')
@@ -190,6 +205,12 @@ test('an options fence with 2+ choices is parsed and stripped from the surroundi
 
 test('leading bullet / numbered markers are stripped so the model can write a natural list', () => {
   assert.deepEqual(extractOptions('```options\n1. First\n2) Second\n* Third\n```')?.options, ['First', 'Second', 'Third'])
+})
+
+test('a choice containing its own nested code fence is not truncated at the wrong close', () => {
+  const content = '```options\n- Run `npm test`\n```js\nnpm test\n```\n- Skip tests\n```'
+  const r = extractOptions(content)
+  assert.deepEqual(r?.options, ['Run `npm test`', '```js', 'npm test', '```', 'Skip tests'])
 })
 
 test('fewer than 2 real choices is NOT a decision → null (rendered as plain text)', () => {

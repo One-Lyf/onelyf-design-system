@@ -107,16 +107,50 @@ export function transcriptFilename(hatName: string, stamp: string): string {
 // outside the DS); LivChat's job is only to notice one and render/download it distinctly.
 export interface LivDocument { title: string; content: string }
 
-const DOCUMENT_FENCE = /```document([^\n]*)\n([\s\S]*?)```/
+const DOCUMENT_OPEN = /```document([^\n]*)\n/
+
+// Finds the block opened by `openRegex` (which must match only the OPENING fence line,
+// capturing any same-line info string as group 1) and walks forward line-by-line to find
+// its balanced close, rather than stopping at the first ``` anywhere in the string. A
+// non-greedy regex alone (the original approach) closes on the FIRST ``` it meets — which
+// is the nested fence's own close if the document/options body itself contains a code
+// sample (```js ... ```), silently truncating everything after it. Any interior line that
+// opens a fence WITH an info string (```js, ```python, …) nests one level deeper; only a
+// bare ``` line (no info string) closes a level, and the outer block only ends when that
+// closes the OUTERMOST level. Malformed/never-closed content returns null, same as before.
+function findFencedBlock(content: string, openRegex: RegExp): { index: number; openMatch: RegExpExecArray; body: string; end: number } | null {
+  const openMatch = openRegex.exec(content)
+  if (!openMatch) return null
+  const bodyStart = openMatch.index + openMatch[0].length
+  const rest = content.slice(bodyStart)
+  const lines = rest.split('\n')
+  let depth = 1
+  let offset = 0
+  for (const line of lines) {
+    if (line.startsWith('```')) {
+      const info = line.slice(3).trim()
+      if (info === '') {
+        depth--
+        if (depth === 0) {
+          return { index: openMatch.index, openMatch, body: rest.slice(0, offset), end: bodyStart + offset + 3 }
+        }
+      } else {
+        depth++
+      }
+    }
+    offset += line.length + 1
+  }
+  return null // never closed at the outer level — malformed, no document
+}
 
 export function extractDocument(content: string | null | undefined): { text: string; document: LivDocument } | null {
   if (!content) return null
-  const m = DOCUMENT_FENCE.exec(content)
-  if (!m) return null
-  const body = m[2].trim()
+  const found = findFencedBlock(content, DOCUMENT_OPEN)
+  if (!found) return null
+  const body = found.body.trim()
   if (!body) return null // an empty fence is treated as no document, not a blank one
-  const title = m[1].trim() || 'Document'
-  const text = (content.slice(0, m.index) + content.slice(m.index + m[0].length)).trim()
+  const title = (found.openMatch[1] || '').trim() || 'Document'
+  const text = (content.slice(0, found.index) + content.slice(found.end)).trim()
   return { text, document: { title, content: body } }
 }
 
@@ -146,16 +180,16 @@ export function documentFilename(title: string, stamp: string): string {
 // Returns null (render as normal text) when: no fence, or fewer than 2 real choices — a
 // single "option" isn't a decision. Leading bullet markers (-, *, 1.) are stripped so the
 // model can write a natural list. Kept JSX-free for node --test.
-const OPTIONS_FENCE = /```options[^\n]*\n([\s\S]*?)```/
+const OPTIONS_OPEN = /```options[^\n]*\n/
 export function extractOptions(content: string | null | undefined): { text: string; options: string[] } | null {
   if (!content) return null
-  const m = OPTIONS_FENCE.exec(content)
-  if (!m) return null
-  const options = m[1]
+  const found = findFencedBlock(content, OPTIONS_OPEN)
+  if (!found) return null
+  const options = found.body
     .split('\n')
     .map((l) => l.replace(/^\s*(?:[-*]|\d+[.)])\s+/, '').trim()) // strip a leading bullet / "1." marker
     .filter(Boolean)
   if (options.length < 2) return null // 0-1 choices isn't a decision — leave it as plain text
-  const text = (content.slice(0, m.index) + content.slice(m.index + m[0].length)).trim()
+  const text = (content.slice(0, found.index) + content.slice(found.end)).trim()
   return { text, options }
 }
