@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
 
 // enterSends = true on a physical keyboard (fine pointer); false on a touch device.
 test('plain Enter sends on a physical keyboard (enterSends=true)', () => {
@@ -236,8 +236,70 @@ test('blank lines between choices are ignored, real choices kept', () => {
   assert.deepEqual(r?.options, ['A', 'B', 'C'])
 })
 
+// ── linkifySegments / isSameOrigin — external-link guard (livchat-external-link-guard) ──
+test('plain text with no URL stays a single text segment', () => {
+  assert.deepEqual(linkifySegments('just a normal reply'), [{ kind: 'text', value: 'just a normal reply' }])
+})
+
+test('a bare URL mid-sentence is split out as its own segment', () => {
+  assert.deepEqual(linkifySegments('see https://example.com for details'), [
+    { kind: 'text', value: 'see ' },
+    { kind: 'url', value: 'https://example.com' },
+    { kind: 'text', value: ' for details' },
+  ])
+})
+
+test('a URL at the very start or end of the text has no adjacent empty segment', () => {
+  assert.deepEqual(linkifySegments('https://example.com'), [{ kind: 'url', value: 'https://example.com' }])
+  assert.deepEqual(linkifySegments('go to https://example.com'), [
+    { kind: 'text', value: 'go to ' },
+    { kind: 'url', value: 'https://example.com' },
+  ])
+})
+
+test('multiple URLs in one message are all linkified', () => {
+  const segs = linkifySegments('https://a.com and https://b.com')
+  assert.deepEqual(segs.filter((s) => s.kind === 'url').map((s) => s.value), ['https://a.com', 'https://b.com'])
+})
+
+test('a trailing sentence period is NOT folded into the link', () => {
+  assert.deepEqual(linkifySegments('Check https://example.com/path.'), [
+    { kind: 'text', value: 'Check ' },
+    { kind: 'url', value: 'https://example.com/path' },
+    { kind: 'text', value: '.' },
+  ])
+})
+
+test('a URL wrapped in a parenthetical keeps its own closing paren off the link', () => {
+  assert.deepEqual(linkifySegments('(see https://example.com)'), [
+    { kind: 'text', value: '(see ' },
+    { kind: 'url', value: 'https://example.com' },
+    { kind: 'text', value: ')' },
+  ])
+})
+
+test('a Wikipedia-style URL with an unmatched "(" inside its own path keeps the closing paren', () => {
+  const url = 'https://en.wikipedia.org/wiki/Foo_(disambiguation)'
+  assert.deepEqual(linkifySegments(url), [{ kind: 'url', value: url }])
+})
+
+test('http (non-https) links are also detected', () => {
+  assert.deepEqual(linkifySegments('http://example.com'), [{ kind: 'url', value: 'http://example.com' }])
+})
+
+test('a same-origin URL matches, a different scheme/host/port does not', () => {
+  const origin = 'https://console.onelyf.net'
+  assert.equal(isSameOrigin('https://console.onelyf.net/settings', origin), true)
+  assert.equal(isSameOrigin('https://other.com', origin), false)
+  assert.equal(isSameOrigin('http://console.onelyf.net', origin), false) // scheme differs
+  assert.equal(isSameOrigin('https://console.onelyf.net:8080', origin), false) // port differs
+})
+
+test('a malformed URL is treated as NOT same-origin (fail closed, show the warning)', () => {
+  assert.equal(isSameOrigin('not a url', 'https://console.onelyf.net'), false)
+})
+
 // ── attachmentError — non-image attachments size + type gate (livchat-non-image-attachments) ──
-// Mirrors LivChat's own ATTACH policy so the tests exercise the real limits the component ships.
 const POLICY = { maxBytes: 20 * 1024 * 1024, allowed: ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.pdf', '.txt', '.csv'] }
 
 test('an image under the size cap is accepted (null)', () => {
@@ -257,7 +319,7 @@ test('a PDF, TXT, and CSV within the cap are all accepted', () => {
 
 test('a CSV with a BLANK browser mime is still accepted by its .csv extension (the real-world case)', () => {
   assert.equal(attachmentError({ name: 'export.csv', type: '', size: 500 }, POLICY), null)
-  assert.equal(attachmentError({ name: 'export.CSV', type: '', size: 500 }, POLICY), null) // case-insensitive
+  assert.equal(attachmentError({ name: 'export.CSV', type: '', size: 500 }, POLICY), null)
 })
 
 test('a disallowed type is rejected with a VISIBLE, named error — not a silent drop', () => {

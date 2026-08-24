@@ -194,16 +194,74 @@ export function extractOptions(content: string | null | undefined): { text: stri
   return { text, options }
 }
 
+// ─── Auto-linkify + external-link guard (livchat-external-link-guard) ────────────────────────
+// Jeff live 2026-08-23 (via /builders): pasted URLs rendered as plain text with no tap-through
+// warning. This is the pure half — splitting message text into linkable segments, and deciding
+// whether a given URL should skip LivChat's external-link interstitial. LivChat.tsx does the
+// JSX rendering + the modal; kept out of here so this stays node --test-able like its siblings.
+
+// Bare-URL detector. Deliberately excludes whitespace/angle-brackets/quotes from the match body
+// so it doesn't reach across a wrapping `<...>` or "..." — trailing SENTENCE punctuation (a
+// period ending the sentence, a closing paren) still needs a separate trim pass below, since it's
+// indistinguishable from URL characters by charset alone.
+const URL_RE = /https?:\/\/[^\s<>"']+/g
+const TRAILING_PUNCT = ".,!?;:'\")]}"
+
+// Trims trailing punctuation off a raw regex match and returns it as separate trailing text, e.g.
+// "https://x.com." -> { url: "https://x.com", trail: "." } so the period doesn't get folded into
+// the link. A trailing ")" is kept as part of the URL when the URL itself contains an unmatched
+// "(" (Wikipedia-style URLs with a parenthetical in the path) — otherwise it's almost always the
+// sentence's own closing paren, not the URL's.
+function trimTrailingPunct(raw: string): { url: string; trail: string } {
+  let url = raw
+  let trail = ''
+  while (url.length > 0) {
+    const ch = url[url.length - 1]
+    if (!TRAILING_PUNCT.includes(ch)) break
+    if (ch === ')') {
+      const opens = (url.match(/\(/g) || []).length
+      const closes = (url.match(/\)/g) || []).length
+      if (opens >= closes) break // this ')' balances an '(' inside the URL — keep it
+    }
+    trail = ch + trail
+    url = url.slice(0, -1)
+  }
+  return { url, trail }
+}
+
+export type TextSegment = { kind: 'text'; value: string } | { kind: 'url'; value: string }
+
+// Splits `text` into an ordered list of plain-text and bare-URL segments for LivChat to render
+// (plain <span>s and tappable <a>s respectively). A no-URL input returns a single text segment.
+export function linkifySegments(text: string): TextSegment[] {
+  const segments: TextSegment[] = []
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    const start = m.index ?? 0
+    if (start > last) segments.push({ kind: 'text', value: text.slice(last, start) })
+    const { url, trail } = trimTrailingPunct(m[0])
+    if (url) segments.push({ kind: 'url', value: url })
+    else segments.push({ kind: 'text', value: m[0] }) // whole match was punctuation (shouldn't happen — URL_RE requires a non-space char after the scheme)
+    if (url && trail) segments.push({ kind: 'text', value: trail })
+    last = start + m[0].length
+  }
+  if (last < text.length) segments.push({ kind: 'text', value: text.slice(last) })
+  return segments
+}
+
+// Whether `url` is on the SAME origin as the app itself — same-origin links skip LivChat's
+// external-link warning modal (Jeff, 2026-08-23: only genuinely external destinations need the
+// interstitial). A malformed/unparseable URL is treated as NOT same-origin (fail closed — show
+// the warning rather than silently trust something that isn't even a valid URL).
+export function isSameOrigin(url: string, currentOrigin: string): boolean {
+  try {
+    return new URL(url).origin === currentOrigin
+  } catch {
+    return false
+  }
+}
+
 // ─── Attachment validation (livchat-non-image-attachments, DS half) ──────────────────────────
-// Attachments were images-only; this widens them to PDF / TXT / CSV. A picked file must clear a
-// size cap AND be an allowed type, or the composer surfaces a VISIBLE error (setMsg) rather than
-// silently dropping it. Pure so it unit-tests under `node --test` beside the fence extractors;
-// LivChat's file <input> onChange runs it per file and stages only the ones that return null.
-//
-// `allowed` entries are matched three ways so a real browser File passes even when its mime is
-// unreliable: a '.ext' entry matches the filename's extension (browsers often report a blank mime
-// for CSV); an 'image/*' style wildcard matches a mime PREFIX; anything else is an exact mime
-// match. Returns a human error string on rejection, or null when the file is acceptable.
 export interface AttachmentPolicy { maxBytes: number; allowed: string[] }
 export function attachmentError(
   file: { name?: string; type?: string; size?: number },
@@ -215,9 +273,9 @@ export function attachmentError(
   const size = file.size || 0
   const typeOk = policy.allowed.some((entry) => {
     const a = entry.toLowerCase()
-    if (a.startsWith('.')) return lowerName.endsWith(a)            // extension match (blank-mime CSV/TXT)
-    if (a.endsWith('/*')) return !!type && type.startsWith(a.slice(0, -1)) // 'image/*' → prefix 'image/'
-    return type === a                                             // exact mime
+    if (a.startsWith('.')) return lowerName.endsWith(a)
+    if (a.endsWith('/*')) return !!type && type.startsWith(a.slice(0, -1))
+    return type === a
   })
   if (!typeOk) return `${label} isn't a supported type. Attach an image, PDF, TXT, or CSV.`
   if (size > policy.maxBytes) {
