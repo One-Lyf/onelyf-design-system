@@ -260,3 +260,27 @@ export function isSameOrigin(url: string, currentOrigin: string): boolean {
     return false
   }
 }
+
+// ─── Attachment validation (livchat-non-image-attachments, DS half) ──────────────────────────
+export interface AttachmentPolicy { maxBytes: number; allowed: string[] }
+export function attachmentError(
+  file: { name?: string; type?: string; size?: number },
+  policy: AttachmentPolicy,
+): string | null {
+  const label = file.name || 'That file'
+  const type = (file.type || '').toLowerCase()
+  const lowerName = (file.name || '').toLowerCase()
+  const size = file.size || 0
+  const typeOk = policy.allowed.some((entry) => {
+    const a = entry.toLowerCase()
+    if (a.startsWith('.')) return lowerName.endsWith(a)
+    if (a.endsWith('/*')) return !!type && type.startsWith(a.slice(0, -1))
+    return type === a
+  })
+  if (!typeOk) return `${label} isn't a supported type. Attach an image, PDF, TXT, or CSV.`
+  if (size > policy.maxBytes) {
+    const mb = Math.round(policy.maxBytes / (1024 * 1024))
+    return `${label} is too large (max ${mb} MB).`
+  }
+  return null
+}

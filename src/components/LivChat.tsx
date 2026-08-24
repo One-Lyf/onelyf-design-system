@@ -16,7 +16,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -25,7 +25,10 @@ export type LivResult<T = unknown> =
   | { ok: false; error?: { message?: string; detail?: string } }
 
 export interface LivSession { id: string; title?: string | null; channel?: string }
-export interface LivAttachment { kind?: string; path: string; mime?: string }
+// `kind` distinguishes an image (rendered as a thumbnail) from any other file (rendered as a
+// chip). `name` is the original filename for the chip label; optional so a backend that only
+// stores a storage path still renders (the chip falls back to the path's basename).
+export interface LivAttachment { kind?: string; path: string; mime?: string; name?: string }
 export interface LivMessage {
   id: string
   role: 'user' | 'liv'
@@ -169,6 +172,15 @@ export interface LivChatProps {
   // with its controls, not a separate dock chrome bar stacked on top. Omit for an inline host.
   onMinimize?: () => void
   onClose?: () => void
+  // Optional full-screen (maximize) dock state. `dock` is the geometry the component renders now:
+  // 'panel' (default) sizes within its host box; 'full' escapes to a fixed, full-viewport overlay
+  // (position:fixed inset:0 — so it clears any host/LivDock box without either side changing). The
+  // HOST owns the state and flips it via onMaximize/onRestore; LivChat stays mounted across the
+  // change, so the conversation, draft, scroll position, and streaming reply all survive. The
+  // maximize/restore icon renders only when at least one handler is supplied.
+  dock?: 'panel' | 'full'
+  onMaximize?: () => void
+  onRestore?: () => void
   // Optional one-shot external ask: pre-fill the composer draft, optionally attach some files,
   // and (typically) auto-open a persistent host that keeps LivChat mounted. `nonce` MUST change
   // per ask — same nonce twice is idempotent and won't re-fire. Used today by Commis's
@@ -270,6 +282,16 @@ export interface LivChatAction {
   disabled?: boolean
 }
 
+// Attachment policy — what the composer's file picker will accept. Images render as thumbnails;
+// PDF / TXT / CSV render as a file chip (DS half; the app backend handles model delivery of the
+// non-image bytes). `allowed` mixes mime patterns ('image/*', exact mimes) and extensions ('.csv')
+// so a file whose browser-reported mime is blank (common for CSV) still passes by its extension.
+// A file that busts the size cap or isn't an allowed type is surfaced as a visible error line
+// (setMsg), never silently dropped — the check lives in attachmentError() so it can be unit-tested.
+const ATTACH_MAX_BYTES = 20 * 1024 * 1024 // 20 MB
+const ATTACH_ALLOWED = ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.pdf', '.txt', '.csv']
+const ATTACH_ACCEPT = 'image/*,.pdf,application/pdf,.txt,.csv,text/plain,text/csv'
+
 const DEFAULT_MODELS: LivModel[] = [
   { id: 'claude-opus-4-8', label: 'Opus 4.8 · most capable (default)' },
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 · balanced' },
@@ -337,6 +359,8 @@ const ImageI = () => <svg {...svg}><rect x="3" y="3" width="18" height="18" rx="
 const SearchI = () => <svg {...svg}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
 const ChevronDownI = () => <svg {...svg}><path d="M6 9l6 6 6-6" /></svg>
 const CloseI = () => <svg {...svg}><path d="M18 6L6 18M6 6l12 12" /></svg>
+const Maximize2I = () => <svg {...svg}><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
+const Minimize2I = () => <svg {...svg}><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
 const PlusI = () => <svg {...svg}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
 const ArrowUpI = () => <svg {...svg}><line x1="12" y1="19" x2="12" y2="5" /><path d="M5 12l7-7 7 7" /></svg>
 const GlobeI = () => <svg {...svg}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
@@ -598,6 +622,13 @@ export const livChatStylesheet = `
   .lc-body[data-rail-open="true"] { grid-template-columns: 1fr; }
   .lc-body[data-rail-open="true"] .lc-main { display: none; }
 }
+/* Full-screen (maximize) dock state. position:fixed + inset:0 lift the card out of any host /
+   LivDock box to cover the viewport — no host change needed. The z-index sits above the composer's
+   own popovers (Brain / actions use 30–31). border-radius:0 + max-height are also set inline on the
+   root/transcript (an inline style a plain stylesheet selector can't override), so this rule's role
+   is the positioning escape; the inline overrides handle the size/corner clamp. */
+.lc-root[data-dock="full"] { position: fixed; inset: 0; width: auto; max-width: 100%; max-height: 100vh; border-radius: 0; z-index: 60; }
+.lc-root[data-dock="full"] .lc-transcript { max-height: none; }
 `
 
 // Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
@@ -612,7 +643,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, dock = 'panel', onMaximize, onRestore, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
@@ -1007,7 +1038,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
       const sentFiles = draftFiles
       const optimistic: LivMessage = {
         id: tmpId, role: 'user', modality: 'text', channel: 'console',
-        content: text, attachments: sentFiles.map((f, i) => ({ kind: 'image', path: localPath(i), mime: f.type })),
+        content: text, attachments: sentFiles.map((f, i) => ({ kind: f.type.startsWith('image/') ? 'image' : 'file', path: localPath(i), mime: f.type, name: f.name })),
       }
       if (stillActive()) {
         setMessages((m) => [...m, optimistic])
@@ -1287,7 +1318,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
   }
 
   return (
-    <section className="lc-root" style={{ ...S.card, ['--lc-accent' as string]: accent }}>
+    <section className="lc-root" data-dock={dock} style={{ ...S.card, ['--lc-accent' as string]: accent, ...(dock === 'full' ? { borderRadius: 0, maxHeight: '100vh' } : null) }}>
       <div style={S.head}>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {/* History (N) pill — always visible, opens the slide-in drawer over the transcript.
@@ -1346,8 +1377,17 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
               placement is canon). The header now only carries the token/cost meter + optional
               dock controls; API-key entry, model selector, and usage breakdown all live in the
               composer's Brain popover next to attach/mic/send. */}
-          {/* Dock controls — only when a floating host supplies them. Chevron-down collapses
-              back to the launcher (conversation kept); X dismisses. */}
+          {/* Dock controls — only when a floating host supplies them. Maximize expands to a
+              fixed full-viewport overlay; restore returns to the panel; chevron-down collapses
+              back to the launcher (conversation kept); X dismisses. The maximize/restore icon
+              only renders when the host supplies the matching handler for the current dock state. */}
+          {dock === 'full'
+            ? onRestore && (
+                <button type="button" className="lc-iconbtn" style={S.iconbtn} onClick={onRestore} title="Restore" aria-label="Restore Liv to a panel"><Minimize2I /></button>
+              )
+            : onMaximize && (
+                <button type="button" className="lc-iconbtn" style={S.iconbtn} onClick={onMaximize} title="Maximize" aria-label="Maximize Liv to full screen"><Maximize2I /></button>
+              )}
           {onMinimize && (
             <button type="button" className="lc-iconbtn" style={S.iconbtn} onClick={onMinimize} title="Minimize" aria-label="Minimize Liv"><ChevronDownI /></button>
           )}
@@ -1400,7 +1440,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
         )}
 
         <div className="lc-main" style={S.main}>
-          <div className="lc-transcript" ref={transcriptRef} style={S.transcript} onScroll={onTranscriptScroll}>
+          <div className="lc-transcript" ref={transcriptRef} style={{ ...S.transcript, ...(dock === 'full' ? { maxHeight: 'none' } : null) }} onScroll={onTranscriptScroll}>
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
                 {hat.glyph && <Glyph variant={hat.glyph} size={64} />}
@@ -1453,11 +1493,23 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
                 </div>
                 {attachmentsOf(m).length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: m.content ? 6 : 0 }}>
-                    {attachmentsOf(m).map((a, i) => (
-                      urls[a.path]
-                        ? <img key={i} src={urls[a.path]} alt="attachment" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: radius.sm, border: `1px solid ${cssVar.border}` }} />
-                        : <span key={i} style={{ width: 84, height: 84, display: 'grid', placeItems: 'center', borderRadius: radius.sm, border: `1px dashed ${cssVar.border}`, color: cssVar.dim }}><ImageI /></span>
-                    ))}
+                    {attachmentsOf(m).map((a, i) => {
+                      // Images render as thumbnails (backward compatible — older attachments were all
+                      // stamped kind:'image'); anything else renders as a file chip styled like the
+                      // composer's own file pills. A path/mime-less legacy attachment defaults to image.
+                      const isImage = a.kind === 'image' || (!!a.mime && a.mime.startsWith('image/')) || (!a.kind && !a.mime)
+                      if (isImage) {
+                        return urls[a.path]
+                          ? <img key={i} src={urls[a.path]} alt="attachment" style={{ width: 84, height: 84, objectFit: 'cover', borderRadius: radius.sm, border: `1px solid ${cssVar.border}` }} />
+                          : <span key={i} style={{ width: 84, height: 84, display: 'grid', placeItems: 'center', borderRadius: radius.sm, border: `1px dashed ${cssVar.border}`, color: cssVar.dim }}><ImageI /></span>
+                      }
+                      const fname = a.name || a.path.split('/').pop() || 'file'
+                      return (
+                        <span key={i} title={fname} style={{ ...textStyle('caption'), background: cssVar.track, borderRadius: radius.pill, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%', overflowWrap: 'anywhere' }}>
+                          <FileTextI /> {fname}
+                        </span>
+                      )
+                    })}
                   </div>
                 )}
                 {opts ? (
@@ -1605,7 +1657,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             {files.length > 0 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                 {files.map((f, i) => (
-                  <span key={i} style={{ ...textStyle('caption'), background: cssVar.track, borderRadius: radius.pill, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%', overflowWrap: 'anywhere' }}><ImageI /> {f.name}</span>
+                  <span key={i} style={{ ...textStyle('caption'), background: cssVar.track, borderRadius: radius.pill, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%', overflowWrap: 'anywhere' }}>{f.type.startsWith('image/') ? <ImageI /> : <FileTextI />} {f.name}</span>
                 ))}
               </div>
             )}
@@ -1621,8 +1673,23 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, pe
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
               {showAttach && adapter.attachments && (
                 <>
-                  <button className="lc-iconbtn" style={S.composerIconbtn} title="Attach image" aria-label="Attach image" onClick={() => fileRef.current?.click()}><PlusI /></button>
-                  <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+                  <button className="lc-iconbtn" style={S.composerIconbtn} title="Attach a file" aria-label="Attach a file" onClick={() => fileRef.current?.click()}><PlusI /></button>
+                  <input ref={fileRef} type="file" accept={ATTACH_ACCEPT} multiple style={{ display: 'none' }} onChange={(e) => {
+                    // Validate each pick against the size + type policy. Accepted files stage as
+                    // attachments; rejected ones surface a VISIBLE error line (not a silent drop) via
+                    // the same setMsg channel key/rename/model errors already use. Reset the input so
+                    // re-picking a just-rejected file re-fires onChange.
+                    const picked = Array.from(e.target.files || [])
+                    const accepted: File[] = []
+                    const errors: string[] = []
+                    for (const f of picked) {
+                      const err = attachmentError(f, { maxBytes: ATTACH_MAX_BYTES, allowed: ATTACH_ALLOWED })
+                      if (err) errors.push(err); else accepted.push(f)
+                    }
+                    setFiles(accepted)
+                    setMsg(errors.join(' '))
+                    if (errors.length && fileRef.current) fileRef.current.value = ''
+                  }} />
                 </>
               )}
               {/* Brain pill: model + API-key + provider settings, all folded together. Gated on

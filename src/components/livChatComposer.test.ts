@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, linkifySegments, isSameOrigin } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
 
 // enterSends = true on a physical keyboard (fine pointer); false on a touch device.
 test('plain Enter sends on a physical keyboard (enterSends=true)', () => {
@@ -297,4 +297,57 @@ test('a same-origin URL matches, a different scheme/host/port does not', () => {
 
 test('a malformed URL is treated as NOT same-origin (fail closed, show the warning)', () => {
   assert.equal(isSameOrigin('not a url', 'https://console.onelyf.net'), false)
+})
+
+// ── attachmentError — non-image attachments size + type gate (livchat-non-image-attachments) ──
+const POLICY = { maxBytes: 20 * 1024 * 1024, allowed: ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.pdf', '.txt', '.csv'] }
+
+test('an image under the size cap is accepted (null)', () => {
+  assert.equal(attachmentError({ name: 'photo.png', type: 'image/png', size: 1_000_000 }, POLICY), null)
+})
+
+test('any image/* subtype is accepted via the wildcard prefix', () => {
+  assert.equal(attachmentError({ name: 'a.webp', type: 'image/webp', size: 10 }, POLICY), null)
+  assert.equal(attachmentError({ name: 'a.heic', type: 'image/heic', size: 10 }, POLICY), null)
+})
+
+test('a PDF, TXT, and CSV within the cap are all accepted', () => {
+  assert.equal(attachmentError({ name: 'plan.pdf', type: 'application/pdf', size: 500 }, POLICY), null)
+  assert.equal(attachmentError({ name: 'notes.txt', type: 'text/plain', size: 500 }, POLICY), null)
+  assert.equal(attachmentError({ name: 'data.csv', type: 'text/csv', size: 500 }, POLICY), null)
+})
+
+test('a CSV with a BLANK browser mime is still accepted by its .csv extension (the real-world case)', () => {
+  assert.equal(attachmentError({ name: 'export.csv', type: '', size: 500 }, POLICY), null)
+  assert.equal(attachmentError({ name: 'export.CSV', type: '', size: 500 }, POLICY), null)
+})
+
+test('a disallowed type is rejected with a VISIBLE, named error — not a silent drop', () => {
+  const err = attachmentError({ name: 'app.zip', type: 'application/zip', size: 10 }, POLICY)
+  assert.ok(err && err.includes('app.zip') && err.toLowerCase().includes('supported type'))
+})
+
+test('a blank-mime file with no allowed extension is rejected (not waved through on empty mime)', () => {
+  const err = attachmentError({ name: 'mystery.bin', type: '', size: 10 }, POLICY)
+  assert.ok(err && err.toLowerCase().includes('supported type'))
+})
+
+test('an oversized but allowed-type file is rejected with a size error mentioning the cap', () => {
+  const err = attachmentError({ name: 'huge.pdf', type: 'application/pdf', size: 21 * 1024 * 1024 }, POLICY)
+  assert.ok(err && err.includes('huge.pdf') && err.includes('20 MB') && err.toLowerCase().includes('too large'))
+})
+
+test('exactly at the cap is allowed; one byte over is rejected (boundary)', () => {
+  assert.equal(attachmentError({ name: 'edge.pdf', type: 'application/pdf', size: 20 * 1024 * 1024 }, POLICY), null)
+  assert.ok(attachmentError({ name: 'edge.pdf', type: 'application/pdf', size: 20 * 1024 * 1024 + 1 }, POLICY))
+})
+
+test('type is checked before size — a disallowed oversized file reports the type problem', () => {
+  const err = attachmentError({ name: 'big.zip', type: 'application/zip', size: 999 * 1024 * 1024 }, POLICY)
+  assert.ok(err && err.toLowerCase().includes('supported type'))
+})
+
+test('a nameless file falls back to a generic label rather than crashing', () => {
+  const err = attachmentError({ type: 'application/zip', size: 10 }, POLICY)
+  assert.ok(err && err.startsWith('That file'))
 })
