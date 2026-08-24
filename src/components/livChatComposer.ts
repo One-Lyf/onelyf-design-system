@@ -193,3 +193,36 @@ export function extractOptions(content: string | null | undefined): { text: stri
   const text = (content.slice(0, found.index) + content.slice(found.end)).trim()
   return { text, options }
 }
+
+// ─── Attachment validation (livchat-non-image-attachments, DS half) ──────────────────────────
+// Attachments were images-only; this widens them to PDF / TXT / CSV. A picked file must clear a
+// size cap AND be an allowed type, or the composer surfaces a VISIBLE error (setMsg) rather than
+// silently dropping it. Pure so it unit-tests under `node --test` beside the fence extractors;
+// LivChat's file <input> onChange runs it per file and stages only the ones that return null.
+//
+// `allowed` entries are matched three ways so a real browser File passes even when its mime is
+// unreliable: a '.ext' entry matches the filename's extension (browsers often report a blank mime
+// for CSV); an 'image/*' style wildcard matches a mime PREFIX; anything else is an exact mime
+// match. Returns a human error string on rejection, or null when the file is acceptable.
+export interface AttachmentPolicy { maxBytes: number; allowed: string[] }
+export function attachmentError(
+  file: { name?: string; type?: string; size?: number },
+  policy: AttachmentPolicy,
+): string | null {
+  const label = file.name || 'That file'
+  const type = (file.type || '').toLowerCase()
+  const lowerName = (file.name || '').toLowerCase()
+  const size = file.size || 0
+  const typeOk = policy.allowed.some((entry) => {
+    const a = entry.toLowerCase()
+    if (a.startsWith('.')) return lowerName.endsWith(a)            // extension match (blank-mime CSV/TXT)
+    if (a.endsWith('/*')) return !!type && type.startsWith(a.slice(0, -1)) // 'image/*' → prefix 'image/'
+    return type === a                                             // exact mime
+  })
+  if (!typeOk) return `${label} isn't a supported type. Attach an image, PDF, TXT, or CSV.`
+  if (size > policy.maxBytes) {
+    const mb = Math.round(policy.maxBytes / (1024 * 1024))
+    return `${label} is too large (max ${mb} MB).`
+  }
+  return null
+}
