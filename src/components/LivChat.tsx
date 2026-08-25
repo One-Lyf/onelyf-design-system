@@ -404,19 +404,41 @@ function ModalityPill({ modality }: { modality?: string }) {
 function Linkified({ text, onLinkTap }: { text: string; onLinkTap: (url: string) => void }) {
   const segments = linkifySegments(text)
   if (segments.length === 1 && segments[0].kind === 'text') return <>{text}</>
-  return <>{segments.map((s, i) => s.kind === 'url' ? (
-    <a
-      key={i}
-      href={s.value}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="lc-link"
-      style={{ color: 'var(--lc-accent)', textDecoration: 'underline', overflowWrap: 'anywhere' }}
-      onClick={(e) => { e.preventDefault(); onLinkTap(s.value) }}
-    >
-      {s.value}
-    </a>
-  ) : <span key={i}>{s.value}</span>)}</>
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
+  return <>{segments.map((s, i) => {
+    if (s.kind !== 'url') return <span key={i}>{s.value}</span>
+    // Same-origin links get a real href — no guard applies to them, so native middle-click /
+    // "open in new tab" is fine. External links get NO real href: a bare <a onClick> is
+    // trivially bypassed by middle-click or the context menu's "open in new tab", which act on
+    // the href directly and never run our onClick handler (Ships, PR #65 review). Omitting href
+    // means the browser has no destination to act on outside our handler, so every external tap
+    // — mouse, middle-click, or keyboard — is forced through the guard. tabIndex/role/onKeyDown
+    // restore the keyboard-focusability an <a> normally gets for free from having an href.
+    const external = !isSameOrigin(s.value, origin)
+    return (
+      <a
+        key={i}
+        href={external ? undefined : s.value}
+        target={external ? undefined : '_blank'}
+        rel={external ? undefined : 'noopener noreferrer'}
+        role={external ? 'link' : undefined}
+        tabIndex={external ? 0 : undefined}
+        className="lc-link"
+        style={{ color: 'var(--lc-accent)', textDecoration: 'underline', overflowWrap: 'anywhere', cursor: 'pointer' }}
+        onClick={(e) => { e.preventDefault(); onLinkTap(s.value) }}
+        onAuxClick={external ? (e) => {
+          // Middle-click without href is otherwise a silent no-op — route it through the same
+          // guard instead of leaving the tap looking like it did nothing.
+          if (e.button === 1) { e.preventDefault(); onLinkTap(s.value) }
+        } : undefined}
+        onKeyDown={external ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onLinkTap(s.value) }
+        } : undefined}
+      >
+        {s.value}
+      </a>
+    )
+  })}</>
 }
 
 // Splits a URL into styled parts for the guard modal's link block: a green `scheme://`, a bold
