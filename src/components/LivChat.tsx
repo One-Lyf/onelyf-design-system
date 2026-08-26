@@ -78,7 +78,10 @@ export type LivChatSendResult =
 // space (Cash Stash gold, Tummyful terracotta …); everything else falls back to
 // the design-system defaults so a hat is a few lines, not a restyle.
 export interface LivHat {
-  name: string                 // "Liv", "Commis", "Advisor"
+  // Internal id only (Commis/Advisor/etc., or storage-key scoping) — naming law
+  // (onelyf-planning/docs/liv-chat-canon.md) requires every user-facing render to say
+  // "Liv" regardless of this value; never interpolate it directly into rendered copy.
+  name: string
   subtitle?: string            // shown muted next to the name ("sessions")
   accent?: string              // hat accent (defaults to --ds-primary)
   placeholder?: string         // composer placeholder
@@ -1095,9 +1098,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           const em = res.error?.message
           if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
             if (showKey) setBrainOpen(true)
-            setMsg('Add your API key so ' + hat.name + ' can reply. Your message is saved either way.')
+            setMsg('Add your API key so Liv can reply. Your message is saved either way.')
           } else {
-            setMsg(em || (hat.name + " couldn't reply."))
+            setMsg(em || "Liv couldn't reply.")
           }
         }
       }
@@ -1238,7 +1241,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   function downloadTranscript() {
     if (!messages.length) return
     try {
-      const md = transcriptToMarkdown(messages, { hatName: hat.name })
+      const md = transcriptToMarkdown(messages, { hatName: 'Liv' })
       const d = new Date()
       const p = (n: number) => String(n).padStart(2, '0')
       const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
@@ -1246,7 +1249,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = transcriptFilename(hat.name, stamp)
+      a.download = transcriptFilename('Liv', stamp)
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -1287,7 +1290,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     if (modelInput) patch.model = modelInput
     if (!patch.apiKey && !patch.model) return
     const r = await adapter.key.set(patch)
-    if (r.ok) { setKeyInfo({ hasKey: r.value.hasKey, model: r.value.model }); setKeyInput(''); setMsg('Saved. ' + hat.name + ' can reply now.') }
+    if (r.ok) { setKeyInfo({ hasKey: r.value.hasKey, model: r.value.model }); setKeyInput(''); setMsg('Saved. Liv can reply now.') }
     else setMsg(r.error?.message || 'Could not save key.')
   }
 
@@ -1375,7 +1378,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         </div>
         <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
           {hat.glyph && <Glyph variant={hat.glyph} size={22} />}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{hat.name}{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Liv{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
         </h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {(() => {
@@ -1466,7 +1469,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
                 {hat.glyph && <Glyph variant={hat.glyph} size={64} />}
-                <h3 style={{ ...textStyle('h2'), margin: 0 }}>Ask {hat.name}</h3>
+                <h3 style={{ ...textStyle('h2'), margin: 0 }}>Ask Liv</h3>
                 {(hat.description || hat.emptyText) && (
                   <p style={{ ...S.muted, margin: 0 }}>{hat.description || hat.emptyText}</p>
                 )}
@@ -1505,7 +1508,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               return (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{m.role === 'liv' ? hat.name : 'You'}</span>
+                  <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{m.role === 'liv' ? 'Liv' : 'You'}</span>
                   <ModalityPill modality={m.modality} />
                   {m.content && (
                     <button className="lc-copy lc-iconbtn" style={{ ...S.iconbtn, marginLeft: 'auto' }} title="Copy message" onClick={() => copyMessage(m.id, m.content)}>
@@ -1574,7 +1577,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
             {(streaming || toolActivity) && (
               <div className="lc-bubble" style={bubbleStyle('liv')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{hat.name}</span>
+                  <span style={{ ...textStyle('overline'), color: cssVar.mid }}>Liv</span>
                   <ModalityPill modality="text" />
                   {/* Stop — only when the adapter exposes an abort port; a click cancels the
                       in-flight reply so a slow answer stops burning tokens. Placed right of the
@@ -1615,7 +1618,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 <div className="lc-cards" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: space.sm }}>
                   {actionQueue.introText !== '' && (
                     <p style={{ ...S.muted, margin: 0 }}>
-                      {actionQueue.introText || (hat.name + (cards.length === 1 ? ' proposes this change. Nothing happens until you tap Apply:' : ' proposes these changes. Nothing happens until you tap Apply:'))}
+                      {actionQueue.introText || ('Liv ' + (cards.length === 1 ? 'proposes this change. Nothing happens until you tap Apply:' : 'proposes these changes. Nothing happens until you tap Apply:'))}
                     </p>
                   )}
                   {showBatch && (
@@ -1661,7 +1664,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="ds-btn" style={{ ...S.primaryBtn, opacity: (notReady || applying) ? 0.6 : 1 }}
                               disabled={notReady || applying} onClick={() => applyCard(c.id)}
-                              title={notReady ? "Needs a detail — tell " + hat.name + " the missing part and it'll update this card" : 'Apply this change'}>
+                              title={notReady ? "Needs a detail — tell Liv the missing part and it'll update this card" : 'Apply this change'}>
                               {applying ? 'Applying…' : 'Apply'}
                             </button>
                             <button className="ds-btn" style={S.ghostBtn} onClick={() => dismissCard(c.id)}>Dismiss</button>
@@ -1684,7 +1687,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               </div>
             )}
             <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
-              placeholder={hat.placeholder || `Message ${hat.name}…`}
+              placeholder={hat.placeholder || 'Message Liv…'}
               value={draft} onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing, enterSends)) { e.preventDefault(); send() } }}
               rows={1} />
@@ -1747,7 +1750,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                       }}>
                         <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
                         <p style={{ ...S.muted, margin: 0 }}>
-                          {hat.name} replies using <strong>your own API key</strong>.
+                          Liv replies using <strong>your own API key</strong>.
                           {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
                         </p>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
