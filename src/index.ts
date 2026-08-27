@@ -75,6 +75,9 @@ export {
   // stack below the reply, and the composer's manual actions menu items.
   type LivProposedAction, type LivActionQueue, type LivChatAction,
 } from './components/LivChat'
+export {
+  default as LivSuggestionField, type LivSuggestionFieldProps,
+} from './components/LivSuggestionField'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
 export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'
