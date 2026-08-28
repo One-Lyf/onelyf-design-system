@@ -1756,7 +1756,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <span style={{ ...textStyle('caption'), color: cssVar.mid }}>API Key</span>
                           <input className="ds-input" type="password" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
-                            placeholder={keyInfo.hasKey ? 'Replace key (sk-ant-…)' : 'API key (sk-ant-…)'}
+                            placeholder={keyInfo.hasKey ? 'Replace key' : 'API key'}
                             value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
                         </label>
                         {models.length > 1 && (
