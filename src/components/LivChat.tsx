@@ -295,10 +295,14 @@ const ATTACH_MAX_BYTES = 20 * 1024 * 1024 // 20 MB
 const ATTACH_ALLOWED = ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.pdf', '.txt', '.csv']
 const ATTACH_ACCEPT = 'image/*,.pdf,application/pdf,.txt,.csv,text/plain,text/csv'
 
+// Provider-neutral capability tiers — fallback only for a host that doesn't pass its own
+// `hat.models`. Never name a vendor or model here; a host wired to a real backend should
+// always supply its own list (its real model ids/labels), which is why this exists as a
+// last-resort default rather than the thing apps are expected to ship with.
 const DEFAULT_MODELS: LivModel[] = [
-  { id: 'claude-opus-4-8', label: 'Opus 4.8 · most capable (default)' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 · balanced' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 · fastest / cheapest' },
+  { id: 'balanced', label: 'Balanced · well-rounded (default)' },
+  { id: 'fast', label: 'Fast · quick answers' },
+  { id: 'max', label: 'Max · most capable' },
 ]
 
 // Approximate Anthropic list prices, dollars PER TOKEN (list $/1M ÷ 1e6), keyed
@@ -778,7 +782,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // the chat header — see onelyf-planning/docs/liv-chat-canon.md (Tummyful is the reference design).
   const [brainOpen, setBrainOpen] = useState(false)
   const [keyInput, setKeyInput] = useState('')
-  const [modelInput, setModelInput] = useState(models[0]?.id ?? 'claude-opus-4-8')
+  const [modelInput, setModelInput] = useState(models[0]?.id ?? 'balanced')
   // Set to `Saved` briefly after a successful key save; the Brain popover closes automatically
   // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
@@ -1096,7 +1100,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           // and painting a "couldn't reply" banner for something the user just told us to cancel
           // reads as a failure they didn't cause.
           const em = res.error?.message
-          if (em === 'NO_KEY' || res.error?.detail?.includes('Anthropic key')) {
+          if (em === 'NO_KEY' || res.error?.detail?.toLowerCase().includes('key')) {
             if (showKey) setBrainOpen(true)
             setMsg('Add your API key so Liv can reply. Your message is saved either way.')
           } else {
