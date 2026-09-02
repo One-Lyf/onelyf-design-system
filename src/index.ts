@@ -75,6 +75,12 @@ export {
   // stack below the reply, and the composer's manual actions menu items.
   type LivProposedAction, type LivActionQueue, type LivChatAction,
 } from './components/LivChat'
+// Model-picker policy: the shared curation fn + fallback list, so an app wiring
+// adapter.key.listModels can reuse the exact same rules (drop Fable/Mythos, relabel, dedupe).
+export {
+  curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID, DEFAULT_MODEL_EXCLUDE,
+  type CurateOptions,
+} from './components/livChatModels'
 export {
   default as LivSuggestionField, type LivSuggestionFieldProps,
 } from './components/LivSuggestionField'
