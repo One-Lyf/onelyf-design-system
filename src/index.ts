@@ -87,6 +87,7 @@ export {
   EFFORT_LEVELS, DEFAULT_EFFORT, isEffort, effortIndex, effortAtIndex,
   MODES, DEFAULT_MODE, isMode,
   VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity,
+  DEFAULT_COMPACT_THRESHOLD,
   type LivEffortLevel, type LivModeOption, type LivVerbosityOption,
 } from './components/livChatModes'
 export {

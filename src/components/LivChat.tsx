@@ -19,7 +19,7 @@ import Glyph, { type GlyphVariant } from '../Glyph'
 import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
 import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
-import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode, VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity } from './livChatModes'
+import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode, VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity, DEFAULT_COMPACT_THRESHOLD } from './livChatModes'
 import type { LivEffort, LivMode, LivVerbosity } from './livChatModes'
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -49,6 +49,7 @@ export interface LivKeyInfo {
   effort?: LivEffort | null
   mode?: LivMode | null
   verbosity?: LivVerbosity | null
+  autoCompact?: boolean | null
 }
 // LivModel lives in ./livChatModels; LivEffort/LivMode in ./livChatModes. Re-exported here so
 // the public surface stays single-import.
@@ -112,6 +113,7 @@ export interface LivHat {
   enableEffort?: boolean
   enableMode?: boolean
   enableVerbosity?: boolean     // Terse/Verbose/Summary output selector
+  compactThreshold?: number     // auto-compact token trigger (default DEFAULT_COMPACT_THRESHOLD)
   glyph?: GlyphVariant         // brand mark shown in the header ('live' for Liv); omit for none
   // ── Open branding layer ────────────────────────────────────────────────────
   // The structure/navigation is identical across every app; a hat overrides
@@ -163,13 +165,19 @@ export interface LivChatAdapter {
     // user-cancelled case silently (no error banner). Backward compatible: an adapter without
     // abort() gets the old behavior (no Stop button, no auto-cancel — same as before).
     abort?(): void
+    // Optional compaction. When present, LivChat shows a "Compact" control (+ an Auto-compact
+    // toggle) and, on auto, calls this once a session's cumulative token usage crosses the
+    // threshold. The app summarizes the session's history and replaces it with a compact summary
+    // so later turns carry less context. On success LivChat reloads the (now shorter) transcript.
+    // Provider-agnostic: the app decides HOW to summarize. Absent → no compaction UI.
+    compact?(sessionId: string): Promise<LivResult>
   }
   attachments?: { signedUrl(path: string): Promise<string> }
   key?: {
     get(): Promise<LivResult<LivKeyInfo>>
     // `effort` / `mode` are only sent when the hat enables those controls; adapters that don't
     // support them can ignore the fields (they stay optional on the patch).
-    set(patch: { apiKey?: string; model?: string; effort?: LivEffort; mode?: LivMode; verbosity?: LivVerbosity }): Promise<LivResult<LivKeyInfo>>
+    set(patch: { apiKey?: string; model?: string; effort?: LivEffort; mode?: LivMode; verbosity?: LivVerbosity; autoCompact?: boolean }): Promise<LivResult<LivKeyInfo>>
     // Optional live model discovery. When present, LivChat calls this the first time the
     // Brain menu opens and populates the picker from the result — real ids + display names.
     // The host wires it to its own backend, which calls the provider's `GET /v1/models`
@@ -826,9 +834,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const showEffort = hat.enableEffort === true && !!adapter.key
   const showMode = hat.enableMode === true && !!adapter.key
   const showVerbosity = hat.enableVerbosity === true && !!adapter.key
+  const showCompact = !!adapter.chat.compact
   const [effortInput, setEffortInput] = useState<LivEffort>(DEFAULT_EFFORT)
   const [modeInput, setModeInput] = useState<LivMode>(DEFAULT_MODE)
   const [verbosityInput, setVerbosityInput] = useState<LivVerbosity>(DEFAULT_VERBOSITY)
+  const [autoCompact, setAutoCompact] = useState(false)
+  const [compacting, setCompacting] = useState(false)
   // Set to `Saved` briefly after a successful key save; the Brain popover closes automatically
   // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
@@ -958,6 +969,29 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     } catch (e) { console.error('sessions.list failed', e) }
   }
 
+  // Compact the given session: the app summarizes its history and replaces it with a compact
+  // summary; we then reload the (shorter) transcript. Manual (Compact button) or auto (threshold).
+  async function doCompact(sessionId: string | null) {
+    const sid = sessionId ?? activeId
+    if (!sid || !adapter.chat.compact || compacting) return
+    setCompacting(true)
+    try {
+      const r = await adapter.chat.compact(sid)
+      if (r.ok) {
+        const m = await adapter.messages.list(sid)
+        if (m.ok) { setMessages(m.value.messages); resolveUrls(m.value.messages) }
+        setMsg('Conversation compacted.')
+      } else {
+        setMsg(r.error?.message || 'Could not compact the conversation.')
+      }
+    } catch (e) {
+      console.error('compact failed', e)
+      setMsg('Could not compact the conversation.')
+    } finally {
+      setCompacting(false)
+    }
+  }
+
   async function loadKey() {
     if (!adapter.key) return
     try {
@@ -968,6 +1002,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         if (isEffort(r.value.effort)) setEffortInput(r.value.effort)
         if (isMode(r.value.mode)) setModeInput(r.value.mode)
         if (isVerbosity(r.value.verbosity)) setVerbosityInput(r.value.verbosity)
+        if (typeof r.value.autoCompact === 'boolean') setAutoCompact(r.value.autoCompact)
       }
     } catch (e) { console.error('key.get failed', e) }
   }
@@ -1187,6 +1222,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           () => `partial-${sessionId}-${Math.round(performance.now())}`)
         const next = partial ? [...r.value.messages, partial] : r.value.messages
         setMessages(next); resolveUrls(next)
+      }
+      // Auto-compact: once this session's cumulative tokens cross the threshold, summarize it down.
+      // `usage` is the running total BEFORE this turn; add this turn's tokens for the new total.
+      if (res.ok && autoCompact && adapter.chat.compact && !compacting) {
+        const total = (usage.input || 0) + (usage.output || 0) + (res.usage ? (res.usage.input || 0) + (res.usage.output || 0) : 0)
+        if (total > (hat.compactThreshold ?? DEFAULT_COMPACT_THRESHOLD)) void doCompact(sessionId)
       }
       // The server-confirmed message(s) just replaced the optimistic one above, so
       // its local blob preview URL(s) are no longer referenced anywhere — revoke
@@ -1942,6 +1983,30 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                               })}
                             </div>
                             <span style={{ ...textStyle('caption'), color: cssVar.dim }}>{VERBOSITY_OPTIONS.find((v) => v.id === verbosityInput)?.hint}</span>
+                          </div>
+                        )}
+                        {/* Compaction — manual "Compact now" + Auto toggle. Summarizes the session
+                            to keep the working context small (auto fires past the token threshold). */}
+                        {showCompact && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Context</span>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <button type="button" className="ds-btn"
+                                disabled={compacting || !activeId || !messages.length}
+                                style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 8px', borderRadius: radius.sm, cursor: (compacting || !messages.length) ? 'default' : 'pointer', border: `1px solid ${accent}`, background: cssVar.surface, color: accent, opacity: (compacting || !messages.length) ? 0.5 : 1 }}
+                                onClick={() => doCompact(activeId)}>{compacting ? 'Compacting…' : 'Compact now'}</button>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, ...textStyle('caption'), color: cssVar.mid, cursor: 'pointer' }}>
+                                <input type="checkbox" checked={autoCompact}
+                                  onChange={async (e) => {
+                                    const on = e.target.checked
+                                    setAutoCompact(on)
+                                    const r = await adapter.key?.set({ autoCompact: on })
+                                    if (r && !r.ok) setMsg(r.error?.message || 'Could not save auto-compact.')
+                                  }} />
+                                Auto
+                              </label>
+                            </div>
+                            <span style={{ ...textStyle('caption'), color: cssVar.dim }}>Summarize the conversation to keep the context small. Auto compacts past ~{Math.round((hat.compactThreshold ?? DEFAULT_COMPACT_THRESHOLD) / 1000)}K tokens.</span>
                           </div>
                         )}
                         {/* Persona tier selector — Cash Stash Advisor's Standard/Premium pattern.

@@ -91,3 +91,9 @@ const VERBOSITY_IDS = VERBOSITY_OPTIONS.map((v) => v.id)
 export function isVerbosity(x: unknown): x is LivVerbosity {
   return typeof x === 'string' && (VERBOSITY_IDS as string[]).includes(x)
 }
+
+// ── Compaction ────────────────────────────────────────────────────────────────
+// Auto-compact fires once a session's cumulative token usage (input + output)
+// crosses this threshold. 100K keeps the working context lean well before any
+// current model's window (200K–1M). A host can override per-hat.
+export const DEFAULT_COMPACT_THRESHOLD = 100_000
