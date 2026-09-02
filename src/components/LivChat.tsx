@@ -19,7 +19,7 @@ import Glyph, { type GlyphVariant } from '../Glyph'
 import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
 import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
-import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE } from './livChatModes'
+import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode } from './livChatModes'
 import type { LivEffort, LivMode } from './livChatModes'
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -957,8 +957,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       if (r.ok) {
         setKeyInfo(r.value)
         if (r.value.model) setModelInput(r.value.model)
-        if (r.value.effort) setEffortInput(r.value.effort)
-        if (r.value.mode) setModeInput(r.value.mode)
+        if (isEffort(r.value.effort)) setEffortInput(r.value.effort)
+        if (isMode(r.value.mode)) setModeInput(r.value.mode)
       }
     } catch (e) { console.error('key.get failed', e) }
   }

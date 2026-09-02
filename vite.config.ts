@@ -17,6 +17,11 @@ export default defineConfig({
     rollupOptions: {
       // Don't bundle React — the host app provides it.
       external: ['react', 'react-dom', 'react/jsx-runtime'],
+      // Keep EVERY export of the entry (src/index.ts) in the bundle, even ones never
+      // referenced internally. Without this, Vite 8's rolldown tree-shakes a re-exported-but-
+      // internally-unused symbol out of the dist (it dropped isEffort/isMode on Vercel while a
+      // local build happened to keep them), and consumers fail at build with MISSING_EXPORT.
+      preserveEntrySignatures: 'strict',
     },
   },
 })
