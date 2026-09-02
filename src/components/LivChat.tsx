@@ -11,12 +11,14 @@
 // liv-voice/console), keeping its hard-won async correctness: every post-await
 // state write is guarded by an activeId ref so a slow reply for session A can
 // never paint over session B.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
 import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
+import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
+import type { LivModel } from './livChatModels'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -38,7 +40,9 @@ export interface LivMessage {
   attachments?: LivAttachment[] | string | null
 }
 export interface LivKeyInfo { hasKey: boolean; model?: string | null }
-export interface LivModel { id: string; label: string }
+// LivModel lives in ./livChatModels (with the picker's curation policy + fallback list);
+// re-exported here so the public surface is unchanged.
+export type { LivModel } from './livChatModels'
 
 // A tool the assistant invokes mid-reply (web search, page fetch). The adapter
 // surfaces these through the same `onChunk` callback as text, so a chat can show
@@ -146,6 +150,13 @@ export interface LivChatAdapter {
   key?: {
     get(): Promise<LivResult<LivKeyInfo>>
     set(patch: { apiKey?: string; model?: string }): Promise<LivResult<LivKeyInfo>>
+    // Optional live model discovery. When present, LivChat calls this the first time the
+    // Brain menu opens and populates the picker from the result — real ids + display names.
+    // The host wires it to its own backend, which calls the provider's `GET /v1/models`
+    // (server-side, where the user's key lives) so new provider releases appear on their own,
+    // no redeploy. Absent (or a failed/empty call) → the picker uses hat.models / the static
+    // fallback. The returned list is run through curateLivModels() before display.
+    listModels?(): Promise<LivResult<{ models: LivModel[] }>>
   }
   // Optional voice capability. When present, the Hands-free toggle reads Liv's replies aloud
   // through the app's own voice (e.g. Google TTS + FX). When absent, Hands-free falls back to the
@@ -295,16 +306,9 @@ const ATTACH_MAX_BYTES = 20 * 1024 * 1024 // 20 MB
 const ATTACH_ALLOWED = ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.pdf', '.txt', '.csv']
 const ATTACH_ACCEPT = 'image/*,.pdf,application/pdf,.txt,.csv,text/plain,text/csv'
 
-// Real model names by name — the model picker is a selector, not branding (Jeff, 2026-09-02):
-// a user on the Anthropic key picks Opus/Sonnet/Haiku by their real ids/labels, never abstract
-// "Balanced/Fast/Max" tiers. This is the fallback for a host that doesn't pass its own
-// `hat.models`; a host wired to another provider supplies that provider's real model list.
-// (The Liv persona + surrounding chrome stay provider-neutral — only this dropdown names models.)
-const DEFAULT_MODELS: LivModel[] = [
-  { id: 'claude-opus-4-8', label: 'Opus 4.8 · most capable (default)' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 · balanced' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 · fastest / cheapest' },
-]
+// The model picker's fallback list + curation policy live in ./livChatModels
+// (DEFAULT_MODELS / DEFAULT_MODEL_ID / curateLivModels), imported above. Live discovery
+// via adapter.key.listModels() replaces this list when a host wires it.
 
 // Approximate Anthropic list prices, dollars PER TOKEN (list $/1M ÷ 1e6), keyed
 // by model family. Cache-write = 1.25× input and cache-read = 0.1× input are the
@@ -675,9 +679,18 @@ interface SpeechRec {
 
 export default function LivChat({ hat, adapter, onState, onMinimize, onClose, dock = 'panel', onMaximize, onRestore, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
-  const models = hat.models || DEFAULT_MODELS
   const showKey = hat.enableKey !== false && !!adapter.key
   const showAttach = hat.enableAttachments !== false
+
+  // Model picker: live provider list when the host wires adapter.key.listModels (fetched the
+  // first time the Brain menu opens), else hat.models, else the bundled fallback. Curation
+  // (drop Fable/Mythos, strip vendor-persona word from labels, dedupe) is applied to whichever
+  // source wins, so the policy holds no matter which path an app is on yet.
+  const [liveModels, setLiveModels] = useState<LivModel[] | null>(null)
+  const models = useMemo(
+    () => curateLivModels(liveModels ?? hat.models ?? DEFAULT_MODELS),
+    [liveModels, hat.models],
+  )
 
   const [sessions, setSessions] = useState<LivSession[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -783,7 +796,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // the chat header — see onelyf-planning/docs/liv-chat-canon.md (Tummyful is the reference design).
   const [brainOpen, setBrainOpen] = useState(false)
   const [keyInput, setKeyInput] = useState('')
-  const [modelInput, setModelInput] = useState(models[0]?.id ?? 'claude-opus-4-8')
+  const [modelInput, setModelInput] = useState(models[0]?.id ?? DEFAULT_MODEL_ID)
   // Set to `Saved` briefly after a successful key save; the Brain popover closes automatically
   // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
@@ -922,6 +935,23 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   }
 
   useEffect(() => { loadSessions(true); loadKey() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live model discovery: the first time the Brain menu opens, ask the host's backend for the
+  // real provider model list (adapter.key.listModels → provider GET /v1/models). Lazy (only on
+  // open, once) so we don't spend a call on chats where the user never touches the picker. A
+  // failed/empty result leaves liveModels null → the curated fallback stays. curateLivModels in
+  // the `models` memo drops Fable/Mythos + relabels, so we can trust the raw list here.
+  useEffect(() => {
+    if (!brainOpen || liveModels || !adapter.key?.listModels) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await adapter.key!.listModels!()
+        if (!cancelled && r.ok && r.value?.models?.length) setLiveModels(r.value.models)
+      } catch (e) { console.error('key.listModels failed', e) }
+    })()
+    return () => { cancelled = true }
+  }, [brainOpen, liveModels, adapter.key])
 
   // Report chat state to a persistent host (LivDock) so its bubble can show an unread dot / thinking
   // pulse. thinking = a turn is in flight (sending) or streaming in. No-op when onState is omitted.
