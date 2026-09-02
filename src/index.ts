@@ -67,7 +67,7 @@ export {
   default as LivChat, livChatStylesheet,
   type LivChatProps, type LivHat, type LivChatAdapter,
   type LivMessage, type LivSession, type LivAttachment, type LivKeyInfo,
-  type LivModel, type LivResult, type LivToolActivity,
+  type LivModel, type LivEffort, type LivMode, type LivResult, type LivToolActivity,
   // Send-result shape (widened by #38 with `extras?: unknown` so app-domain metadata can flow
   // through the adapter without DS knowing the shape) + Anthropic-style usage counts.
   type LivChatSendResult, type LivUsage,
@@ -81,6 +81,13 @@ export {
   curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID, DEFAULT_MODEL_EXCLUDE,
   type CurateOptions,
 } from './components/livChatModels'
+// Effort + autonomy-mode definitions, so an app's adapter maps effort → its provider param and
+// enforces the mode → apply-vs-gate boundary against the same source of truth the UI uses.
+export {
+  EFFORT_LEVELS, DEFAULT_EFFORT, isEffort, effortIndex, effortAtIndex,
+  MODES, DEFAULT_MODE, isMode,
+  type LivEffortLevel, type LivModeOption,
+} from './components/livChatModes'
 export {
   default as LivSuggestionField, type LivSuggestionFieldProps,
 } from './components/LivSuggestionField'
