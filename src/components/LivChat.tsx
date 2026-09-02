@@ -16,11 +16,11 @@ import type { CSSProperties, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
 import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
-import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode } from './livChatModes'
-import type { LivEffort, LivMode } from './livChatModes'
+import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode, VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity } from './livChatModes'
+import type { LivEffort, LivMode, LivVerbosity } from './livChatModes'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -48,11 +48,12 @@ export interface LivKeyInfo {
   // adapters that don't track them are unaffected; the DS defaults to high / manual.
   effort?: LivEffort | null
   mode?: LivMode | null
+  verbosity?: LivVerbosity | null
 }
 // LivModel lives in ./livChatModels; LivEffort/LivMode in ./livChatModes. Re-exported here so
 // the public surface stays single-import.
 export type { LivModel } from './livChatModels'
-export type { LivEffort, LivMode } from './livChatModes'
+export type { LivEffort, LivMode, LivVerbosity } from './livChatModes'
 
 // A tool the assistant invokes mid-reply (web search, page fetch). The adapter
 // surfaces these through the same `onChunk` callback as text, so a chat can show
@@ -110,6 +111,7 @@ export interface LivHat {
   // no surface shows a control that does nothing. The value persists via adapter.key.set.
   enableEffort?: boolean
   enableMode?: boolean
+  enableVerbosity?: boolean     // Terse/Verbose/Summary output selector
   glyph?: GlyphVariant         // brand mark shown in the header ('live' for Liv); omit for none
   // ── Open branding layer ────────────────────────────────────────────────────
   // The structure/navigation is identical across every app; a hat overrides
@@ -167,7 +169,7 @@ export interface LivChatAdapter {
     get(): Promise<LivResult<LivKeyInfo>>
     // `effort` / `mode` are only sent when the hat enables those controls; adapters that don't
     // support them can ignore the fields (they stay optional on the patch).
-    set(patch: { apiKey?: string; model?: string; effort?: LivEffort; mode?: LivMode }): Promise<LivResult<LivKeyInfo>>
+    set(patch: { apiKey?: string; model?: string; effort?: LivEffort; mode?: LivMode; verbosity?: LivVerbosity }): Promise<LivResult<LivKeyInfo>>
     // Optional live model discovery. When present, LivChat calls this the first time the
     // Brain menu opens and populates the picker from the result — real ids + display names.
     // The host wires it to its own backend, which calls the provider's `GET /v1/models`
@@ -813,14 +815,20 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // pill (model + API key + usage) lives IN the composer next to attach/mic/send, NOT in
   // the chat header — see onelyf-planning/docs/liv-chat-canon.md (Tummyful is the reference design).
   const [brainOpen, setBrainOpen] = useState(false)
+  // Transcript viewer: view the open session in a chosen format (Markdown / Plain / JSON) with
+  // copy + download. Opened from the header transcript button.
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
+  const [transcriptFormat, setTranscriptFormat] = useState<'markdown' | 'plain' | 'json'>('markdown')
   const [keyInput, setKeyInput] = useState('')
   const [modelInput, setModelInput] = useState(models[0]?.id ?? DEFAULT_MODEL_ID)
   // Opt-in Brain-menu controls. Local mirror of the persisted value (loaded via key.get); a
   // change writes through key.set immediately, like the model picker.
   const showEffort = hat.enableEffort === true && !!adapter.key
   const showMode = hat.enableMode === true && !!adapter.key
+  const showVerbosity = hat.enableVerbosity === true && !!adapter.key
   const [effortInput, setEffortInput] = useState<LivEffort>(DEFAULT_EFFORT)
   const [modeInput, setModeInput] = useState<LivMode>(DEFAULT_MODE)
+  const [verbosityInput, setVerbosityInput] = useState<LivVerbosity>(DEFAULT_VERBOSITY)
   // Set to `Saved` briefly after a successful key save; the Brain popover closes automatically
   // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
@@ -959,6 +967,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         if (r.value.model) setModelInput(r.value.model)
         if (isEffort(r.value.effort)) setEffortInput(r.value.effort)
         if (isMode(r.value.mode)) setModeInput(r.value.mode)
+        if (isVerbosity(r.value.verbosity)) setVerbosityInput(r.value.verbosity)
       }
     } catch (e) { console.error('key.get failed', e) }
   }
@@ -1298,22 +1307,33 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     } catch { setMsg('Could not copy — clipboard access was blocked.') }
   }
 
-  // Export the whole open conversation as a downloaded Markdown file (the conversation-level
-  // counterpart to per-turn copy). The transcript rendering is the pure transcriptToMarkdown
-  // helper; this just wraps it in a Blob and clicks a temporary <a download>. No-op with an
-  // empty transcript (the affordance is disabled there anyway).
+  // Render the open conversation in the selected format. Pure — feeds both the viewer and the
+  // copy/download actions, so what you see is exactly what you get.
+  const TRANSCRIPT_FORMATS = [
+    { id: 'markdown' as const, label: 'Markdown', ext: 'md', mime: 'text/markdown' },
+    { id: 'plain' as const, label: 'Plain text', ext: 'txt', mime: 'text/plain' },
+    { id: 'json' as const, label: 'JSON', ext: 'json', mime: 'application/json' },
+  ]
+  function renderTranscript(format: 'markdown' | 'plain' | 'json'): string {
+    if (format === 'plain') return transcriptToPlainText(messages, { hatName: 'Liv' })
+    if (format === 'json') return transcriptToJSON(messages, { hatName: 'Liv' })
+    return transcriptToMarkdown(messages, { hatName: 'Liv' })
+  }
+
+  // Download the current transcript in the viewer's selected format — Blob + temporary <a download>.
   function downloadTranscript() {
     if (!messages.length) return
     try {
-      const md = transcriptToMarkdown(messages, { hatName: 'Liv' })
+      const fmt = TRANSCRIPT_FORMATS.find((f) => f.id === transcriptFormat) ?? TRANSCRIPT_FORMATS[0]
+      const text = renderTranscript(fmt.id)
       const d = new Date()
       const p = (n: number) => String(n).padStart(2, '0')
       const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
-      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+      const blob = new Blob([text], { type: `${fmt.mime};charset=utf-8` })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = transcriptFilename('Liv', stamp)
+      a.download = transcriptFilename('Liv', stamp).replace(/\.md$/, `.${fmt.ext}`)
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -1323,6 +1343,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       console.error('transcript export failed', e)
       setMsg('Could not export the conversation.')
     }
+  }
+
+  // Copy the current transcript (selected format) to the clipboard.
+  async function copyTranscript() {
+    if (!messages.length) return
+    try {
+      await navigator.clipboard.writeText(renderTranscript(transcriptFormat))
+      setMsg('Transcript copied.')
+    } catch { setMsg('Could not copy — clipboard access was blocked.') }
   }
 
   // Download a single flagged document (livchat-document-creation) — Blob + temporary <a
@@ -1426,16 +1455,16 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           >
             <MenuI /> History{sessions.length ? ` (${sessions.length})` : ''}
           </button>
-          {/* Export the whole conversation as a Markdown download (conversation-level counterpart
-              to the per-turn copy button). Disabled until there's something to export. */}
+          {/* View the whole conversation in a chosen format (Markdown / Plain / JSON) with copy +
+              download. Disabled until there's something to show. */}
           <button
             type="button"
             className="lc-iconbtn"
             style={{ ...S.iconbtn, opacity: messages.length ? 1 : 0.4 }}
             disabled={!messages.length}
-            aria-label="Export conversation"
-            title="Export this conversation (Markdown)"
-            onClick={downloadTranscript}
+            aria-label="View transcript"
+            title="View / export this conversation"
+            onClick={() => setTranscriptOpen(true)}
           >
             <DownloadI />
           </button>
@@ -1888,6 +1917,33 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                             <span style={{ ...textStyle('caption'), color: cssVar.dim }}>{MODES.find((m) => m.id === modeInput)?.hint}</span>
                           </div>
                         )}
+                        {/* Output verbosity — Terse/Verbose/Summary. How long each reply is; the
+                            app maps it to a system-prompt directive. Independent of effort. */}
+                        {showVerbosity && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Output</span>
+                            <div role="group" aria-label="Output verbosity" style={{ display: 'flex', gap: 4 }}>
+                              {VERBOSITY_OPTIONS.map((v) => {
+                                const active = verbosityInput === v.id
+                                return (
+                                  <button key={v.id} type="button" className="ds-btn" title={v.hint}
+                                    aria-pressed={active}
+                                    style={{ flex: 1, ...textStyle('caption'), fontWeight: 700, padding: '5px 6px', borderRadius: radius.sm, cursor: 'pointer',
+                                      border: `1px solid ${active ? accent : cssVar.border}`,
+                                      background: active ? accent : cssVar.surface,
+                                      color: active ? cssVar.surface : cssVar.mid }}
+                                    onClick={async () => {
+                                      setVerbosityInput(v.id)
+                                      const r = await adapter.key!.set({ verbosity: v.id })
+                                      if (r.ok) setKeyInfo((k) => ({ ...k, verbosity: v.id }))
+                                      else setMsg(r.error?.message || 'Could not set output style.')
+                                    }}>{v.label}</button>
+                                )
+                              })}
+                            </div>
+                            <span style={{ ...textStyle('caption'), color: cssVar.dim }}>{VERBOSITY_OPTIONS.find((v) => v.id === verbosityInput)?.hint}</span>
+                          </div>
+                        )}
                         {/* Persona tier selector — Cash Stash Advisor's Standard/Premium pattern.
                             Only rendered when the hat opts in via hat.tiers + LivChatProps.tier
                             /onTierChange. Ignored for hats without a tier concept (Commis today). */}
@@ -2069,6 +2125,40 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           }}
           onClose={() => setLinkGuardUrl(null)}
         />
+      )}
+
+      {/* Transcript viewer — view the open session in a chosen format (Markdown / Plain / JSON),
+          with copy + download. Read-only overlay; click-out or Close dismisses. */}
+      {transcriptOpen && (
+        <div onClick={() => setTranscriptOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div role="dialog" aria-label="Transcript" aria-modal="true" onClick={(e) => e.stopPropagation()}
+            style={{ background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, boxShadow: 'var(--ds-shadow-card)', width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: 8, padding: 12, boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Transcript</span>
+              <button type="button" className="ds-btn" style={{ ...textStyle('caption'), color: cssVar.mid, background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                aria-label="Close transcript" onClick={() => setTranscriptOpen(false)}>Close</button>
+            </div>
+            <div role="group" aria-label="Transcript format" style={{ display: 'flex', gap: 4 }}>
+              {TRANSCRIPT_FORMATS.map((f) => {
+                const active = transcriptFormat === f.id
+                return (
+                  <button key={f.id} type="button" className="ds-btn" aria-pressed={active}
+                    style={{ flex: 1, ...textStyle('caption'), fontWeight: 700, padding: '5px 6px', borderRadius: radius.sm, cursor: 'pointer',
+                      border: `1px solid ${active ? accent : cssVar.border}`,
+                      background: active ? accent : cssVar.surface,
+                      color: active ? cssVar.surface : cssVar.mid }}
+                    onClick={() => setTranscriptFormat(f.id)}>{f.label}</button>
+                )
+              })}
+            </div>
+            <pre style={{ margin: 0, overflow: 'auto', flex: 1, minHeight: 120, background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.sm, padding: 10, ...textStyle('caption'), whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{renderTranscript(transcriptFormat)}</pre>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" className="ds-btn" style={{ ...S.primaryBtn, flex: 1 }} onClick={copyTranscript}>Copy</button>
+              <button type="button" className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, flex: 1, padding: '8px 10px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${accent}`, background: cssVar.surface, color: accent }} onClick={downloadTranscript}>Download</button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   )

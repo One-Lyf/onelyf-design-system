@@ -2,7 +2,29 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
+
+const TRANSCRIPT = [
+  { role: 'user', content: 'hi there' },
+  { role: 'liv', content: 'Hello!' },
+  { role: 'user', content: '', attachments: ['/img.png'] },
+]
+
+test('transcriptToPlainText frames speakers with no markup', () => {
+  const t = transcriptToPlainText(TRANSCRIPT, { hatName: 'Liv' })
+  assert.ok(t.includes('You:\nhi there'))
+  assert.ok(t.includes('Liv:\nHello!'))
+  assert.ok(t.includes('(attachment)'))
+  assert.ok(!t.includes('**')) // no markdown
+})
+
+test('transcriptToJSON is valid JSON with normalized speakers + attachment flag', () => {
+  const parsed = JSON.parse(transcriptToJSON(TRANSCRIPT, { hatName: 'Liv' }))
+  assert.equal(parsed.turns.length, 3)
+  assert.deepEqual(parsed.turns[0], { speaker: 'you', text: 'hi there', attachment: false })
+  assert.deepEqual(parsed.turns[1], { speaker: 'liv', text: 'Hello!', attachment: false })
+  assert.equal(parsed.turns[2].attachment, true)
+})
 
 // enterSends = true on a physical keyboard (fine pointer); false on a touch device.
 test('plain Enter sends on a physical keyboard (enterSends=true)', () => {

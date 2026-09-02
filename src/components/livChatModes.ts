@@ -68,3 +68,26 @@ const MODE_IDS = MODES.map((m) => m.id)
 export function isMode(x: unknown): x is LivMode {
   return typeof x === 'string' && (MODE_IDS as string[]).includes(x)
 }
+
+// ── Output verbosity ──────────────────────────────────────────────────────────
+// How long/dense each reply is. The app's adapter maps this to a system-prompt
+// directive on every turn (there's no provider param for it). Independent of
+// effort (how hard the model *thinks*) — you can want deep reasoning but a terse
+// answer, or vice versa.
+export type LivVerbosity = 'terse' | 'verbose' | 'summary'
+
+export interface LivVerbosityOption { id: LivVerbosity; label: string; hint: string }
+
+export const VERBOSITY_OPTIONS: LivVerbosityOption[] = [
+  { id: 'terse', label: 'Terse', hint: 'Shortest correct answer — lead with the result, minimal words.' },
+  { id: 'verbose', label: 'Verbose', hint: 'Full detail, context, and worked-through explanation.' },
+  { id: 'summary', label: 'Summary', hint: 'A brief, structured summary — key points only.' },
+]
+
+export const DEFAULT_VERBOSITY: LivVerbosity = 'verbose'
+
+const VERBOSITY_IDS = VERBOSITY_OPTIONS.map((v) => v.id)
+
+export function isVerbosity(x: unknown): x is LivVerbosity {
+  return typeof x === 'string' && (VERBOSITY_IDS as string[]).includes(x)
+}
