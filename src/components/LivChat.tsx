@@ -19,6 +19,8 @@ import Glyph, { type GlyphVariant } from '../Glyph'
 import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
 import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
+import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE } from './livChatModes'
+import type { LivEffort, LivMode } from './livChatModes'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -39,10 +41,18 @@ export interface LivMessage {
   content?: string | null
   attachments?: LivAttachment[] | string | null
 }
-export interface LivKeyInfo { hasKey: boolean; model?: string | null }
-// LivModel lives in ./livChatModels (with the picker's curation policy + fallback list);
-// re-exported here so the public surface is unchanged.
+export interface LivKeyInfo {
+  hasKey: boolean
+  model?: string | null
+  // Persisted reasoning-effort + autonomy-mode (when the hat opts in). Optional so existing
+  // adapters that don't track them are unaffected; the DS defaults to high / manual.
+  effort?: LivEffort | null
+  mode?: LivMode | null
+}
+// LivModel lives in ./livChatModels; LivEffort/LivMode in ./livChatModes. Re-exported here so
+// the public surface stays single-import.
 export type { LivModel } from './livChatModels'
+export type { LivEffort, LivMode } from './livChatModes'
 
 // A tool the assistant invokes mid-reply (web search, page fetch). The adapter
 // surfaces these through the same `onChunk` callback as text, so a chat can show
@@ -94,6 +104,12 @@ export interface LivHat {
   enableAttachments?: boolean  // show the image attach control (default true)
   enableKey?: boolean          // show the bring-your-own-key settings (default true)
   models?: LivModel[]          // model choices for the key panel + inline composer selector
+  // Opt-in Brain-menu controls (default OFF): a reasoning-EFFORT slider and an autonomy-MODE
+  // selector (Auto/Plan/Manual). A hat turns these on only once its adapter actually consumes
+  // them — effort feeds the provider request, mode gates how a proposed change is applied — so
+  // no surface shows a control that does nothing. The value persists via adapter.key.set.
+  enableEffort?: boolean
+  enableMode?: boolean
   glyph?: GlyphVariant         // brand mark shown in the header ('live' for Liv); omit for none
   // ── Open branding layer ────────────────────────────────────────────────────
   // The structure/navigation is identical across every app; a hat overrides
@@ -149,7 +165,9 @@ export interface LivChatAdapter {
   attachments?: { signedUrl(path: string): Promise<string> }
   key?: {
     get(): Promise<LivResult<LivKeyInfo>>
-    set(patch: { apiKey?: string; model?: string }): Promise<LivResult<LivKeyInfo>>
+    // `effort` / `mode` are only sent when the hat enables those controls; adapters that don't
+    // support them can ignore the fields (they stay optional on the patch).
+    set(patch: { apiKey?: string; model?: string; effort?: LivEffort; mode?: LivMode }): Promise<LivResult<LivKeyInfo>>
     // Optional live model discovery. When present, LivChat calls this the first time the
     // Brain menu opens and populates the picker from the result — real ids + display names.
     // The host wires it to its own backend, which calls the provider's `GET /v1/models`
@@ -797,6 +815,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const [brainOpen, setBrainOpen] = useState(false)
   const [keyInput, setKeyInput] = useState('')
   const [modelInput, setModelInput] = useState(models[0]?.id ?? DEFAULT_MODEL_ID)
+  // Opt-in Brain-menu controls. Local mirror of the persisted value (loaded via key.get); a
+  // change writes through key.set immediately, like the model picker.
+  const showEffort = hat.enableEffort === true && !!adapter.key
+  const showMode = hat.enableMode === true && !!adapter.key
+  const [effortInput, setEffortInput] = useState<LivEffort>(DEFAULT_EFFORT)
+  const [modeInput, setModeInput] = useState<LivMode>(DEFAULT_MODE)
   // Set to `Saved` briefly after a successful key save; the Brain popover closes automatically
   // and this leaves a hat-accent status line under the composer (existing `msg` mechanism).
 
@@ -930,7 +954,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     if (!adapter.key) return
     try {
       const r = await adapter.key.get()
-      if (r.ok) { setKeyInfo(r.value); if (r.value.model) setModelInput(r.value.model) }
+      if (r.ok) {
+        setKeyInfo(r.value)
+        if (r.value.model) setModelInput(r.value.model)
+        if (r.value.effort) setEffortInput(r.value.effort)
+        if (r.value.mode) setModeInput(r.value.mode)
+      }
     } catch (e) { console.error('key.get failed', e) }
   }
 
@@ -1809,6 +1838,55 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                               {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                             </select>
                           </label>
+                        )}
+                        {/* Effort slider — reasoning depth (Low→Max). Ordinal, so a slider. The
+                            app's adapter maps this to the provider's effort param on each request. */}
+                        {showEffort && (
+                          <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ ...textStyle('caption'), color: cssVar.mid, display: 'flex', justifyContent: 'space-between' }}>
+                              <span>Effort</span>
+                              <span style={{ color: accent, fontWeight: 700 }}>{EFFORT_LEVELS[effortIndex(effortInput)].label}</span>
+                            </span>
+                            <input type="range" min={0} max={EFFORT_LEVELS.length - 1} step={1}
+                              style={{ width: '100%', accentColor: accent }}
+                              value={effortIndex(effortInput)}
+                              aria-label="Reasoning effort"
+                              onChange={async (e) => {
+                                const next = effortAtIndex(Number(e.target.value))
+                                setEffortInput(next)
+                                const r = await adapter.key!.set({ effort: next })
+                                if (r.ok) setKeyInfo((k) => ({ ...k, effort: next }))
+                                else setMsg(r.error?.message || 'Could not set effort.')
+                              }} />
+                          </label>
+                        )}
+                        {/* Autonomy mode — Auto/Plan/Manual. Segmented (discrete, non-ordinal). The
+                            app enforces the Auto boundary: reversible edits apply directly, money /
+                            deletes / sends / irreversible always confirm-gate regardless of mode. */}
+                        {showMode && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Mode</span>
+                            <div role="group" aria-label="Autonomy mode" style={{ display: 'flex', gap: 4 }}>
+                              {MODES.map((m) => {
+                                const active = modeInput === m.id
+                                return (
+                                  <button key={m.id} type="button" className="ds-btn" title={m.hint}
+                                    aria-pressed={active}
+                                    style={{ flex: 1, ...textStyle('caption'), fontWeight: 700, padding: '5px 6px', borderRadius: radius.sm, cursor: 'pointer',
+                                      border: `1px solid ${active ? accent : cssVar.border}`,
+                                      background: active ? accent : cssVar.surface,
+                                      color: active ? cssVar.surface : cssVar.mid }}
+                                    onClick={async () => {
+                                      setModeInput(m.id)
+                                      const r = await adapter.key!.set({ mode: m.id })
+                                      if (r.ok) setKeyInfo((k) => ({ ...k, mode: m.id }))
+                                      else setMsg(r.error?.message || 'Could not set mode.')
+                                    }}>{m.label}</button>
+                                )
+                              })}
+                            </div>
+                            <span style={{ ...textStyle('caption'), color: cssVar.dim }}>{MODES.find((m) => m.id === modeInput)?.hint}</span>
+                          </div>
                         )}
                         {/* Persona tier selector — Cash Stash Advisor's Standard/Premium pattern.
                             Only rendered when the hat opts in via hat.tiers + LivChatProps.tier
