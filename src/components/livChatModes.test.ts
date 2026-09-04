@@ -4,7 +4,20 @@ import assert from 'node:assert/strict'
 import {
   EFFORT_LEVELS, DEFAULT_EFFORT, isEffort, effortIndex, effortAtIndex,
   MODES, DEFAULT_MODE, isMode,
+  VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity,
 } from './livChatModes.ts'
+
+test('verbosity options are exactly terse/verbose/summary; default is verbose', () => {
+  assert.deepEqual(VERBOSITY_OPTIONS.map((v) => v.id), ['terse', 'verbose', 'summary'])
+  assert.equal(DEFAULT_VERBOSITY, 'verbose')
+})
+
+test('isVerbosity accepts valid ids, rejects everything else', () => {
+  assert.ok(isVerbosity('terse'))
+  assert.ok(isVerbosity('summary'))
+  assert.ok(!isVerbosity('wordy'))
+  assert.ok(!isVerbosity(null))
+})
 
 test('effort ladder is the Anthropic-native low→max order', () => {
   assert.deepEqual(EFFORT_LEVELS.map((e) => e.id), ['low', 'medium', 'high', 'xhigh', 'max'])

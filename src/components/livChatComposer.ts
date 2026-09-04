@@ -81,6 +81,44 @@ export function transcriptToMarkdown(
   return out.join('\n').trimEnd() + '\n'
 }
 
+type TranscriptMsg = { role: string; content?: string | null; attachments?: unknown }
+function hasAttachment(m: TranscriptMsg): boolean {
+  return Array.isArray(m.attachments) ? m.attachments.length > 0
+    : typeof m.attachments === 'string' ? m.attachments.trim().length > 2
+    : false
+}
+
+// Plain-text render of a transcript — same speaker framing as the Markdown one, no markup, so it
+// pastes cleanly into a plain editor / email. Used by the transcript viewer's "Plain text" format.
+export function transcriptToPlainText(
+  messages: ReadonlyArray<TranscriptMsg>,
+  opts: { hatName: string; title?: string },
+): string {
+  const name = opts.hatName || 'Liv'
+  const out: string[] = [opts.title || `Conversation with ${name}`, '']
+  for (const m of messages) {
+    const who = m.role === 'liv' ? name : 'You'
+    const text = (m.content || '').trim()
+    const body = text || (hasAttachment(m) ? '(attachment)' : '(no text)')
+    out.push(`${who}:`, body, '')
+  }
+  return out.join('\n').trimEnd() + '\n'
+}
+
+// Structured JSON render — the machine-readable format (feed another tool / re-import). Speaker is
+// normalized to 'you' | 'liv'; attachment-only turns are flagged.
+export function transcriptToJSON(
+  messages: ReadonlyArray<TranscriptMsg>,
+  opts: { hatName: string; title?: string },
+): string {
+  const turns = messages.map((m) => ({
+    speaker: m.role === 'liv' ? 'liv' : 'you',
+    text: (m.content || '').trim(),
+    attachment: hasAttachment(m),
+  }))
+  return JSON.stringify({ title: opts.title || `Conversation with ${opts.hatName || 'Liv'}`, turns }, null, 2) + '\n'
+}
+
 // A filesystem-safe, human-readable filename for a downloaded transcript. `stamp` is
 // passed in (not read from Date here — keeps this pure/testable); LivChat supplies it.
 export function transcriptFilename(hatName: string, stamp: string): string {

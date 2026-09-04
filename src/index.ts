@@ -67,7 +67,7 @@ export {
   default as LivChat, livChatStylesheet,
   type LivChatProps, type LivHat, type LivChatAdapter,
   type LivMessage, type LivSession, type LivAttachment, type LivKeyInfo,
-  type LivModel, type LivEffort, type LivMode, type LivResult, type LivToolActivity,
+  type LivModel, type LivEffort, type LivMode, type LivVerbosity, type LivResult, type LivToolActivity,
   // Send-result shape (widened by #38 with `extras?: unknown` so app-domain metadata can flow
   // through the adapter without DS knowing the shape) + Anthropic-style usage counts.
   type LivChatSendResult, type LivUsage,
@@ -86,7 +86,9 @@ export {
 export {
   EFFORT_LEVELS, DEFAULT_EFFORT, isEffort, effortIndex, effortAtIndex,
   MODES, DEFAULT_MODE, isMode,
-  type LivEffortLevel, type LivModeOption,
+  VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity,
+  DEFAULT_COMPACT_THRESHOLD,
+  type LivEffortLevel, type LivModeOption, type LivVerbosityOption,
 } from './components/livChatModes'
 export {
   default as LivSuggestionField, type LivSuggestionFieldProps,
