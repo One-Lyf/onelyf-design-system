@@ -115,6 +115,9 @@ export interface LivHat {
   enableVerbosity?: boolean     // Terse/Verbose/Summary output selector
   compactThreshold?: number     // auto-compact token trigger (default DEFAULT_COMPACT_THRESHOLD)
   glyph?: GlyphVariant         // brand mark shown in the header ('live' for Liv); omit for none
+  hideHeaderTitle?: boolean   // drop the header glyph+"Liv" <h2> entirely (empty-state glyph
+                               // becomes the single Liv mark) — opt-in per app, Jeff-approved
+                               // default OFF so apps that want the header title keep it
   // ── Open branding layer ────────────────────────────────────────────────────
   // The structure/navigation is identical across every app; a hat overrides
   // whatever expresses that app's identity. All optional — omit for the shared
@@ -1510,10 +1513,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
             <DownloadI />
           </button>
         </div>
-        <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
-          {hat.glyph && <Glyph variant={hat.glyph} size={22} />}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Liv{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
-        </h2>
+        {!hat.hideHeaderTitle && (
+          <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
+            {hat.glyph && <Glyph variant={hat.glyph} size={22} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Liv{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
+          </h2>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {(() => {
             const totalTok = (usage.input || 0) + (usage.output || 0)
@@ -1602,7 +1607,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           <div className="lc-transcript" ref={transcriptRef} style={{ ...S.transcript, ...(dock === 'full' ? { maxHeight: 'none' } : null) }} onScroll={onTranscriptScroll}>
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
-                {hat.glyph && <Glyph variant={hat.glyph} size={64} />}
+                {hat.glyph && <Glyph variant={hat.glyph} size={hat.hideHeaderTitle ? 120 : 64} />}
                 <h3 style={{ ...textStyle('h2'), margin: 0 }}>Ask Liv</h3>
                 {(hat.description || hat.emptyText) && (
                   <p style={{ ...S.muted, margin: 0 }}>{hat.description || hat.emptyText}</p>
