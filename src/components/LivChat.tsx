@@ -1882,10 +1882,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                         style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
                       <div role="menu" style={{
                         position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
-                        minWidth: 240, maxWidth: 320, zIndex: 31,
+                        minWidth: 240, maxWidth: 320, maxHeight: 'calc(100vh - 120px)', zIndex: 31,
                         background: cssVar.surface, border: `1px solid ${cssVar.border}`,
                         borderRadius: radius.md, padding: 10, boxShadow: 'var(--ds-shadow-card)',
-                        display: 'flex', flexDirection: 'column', gap: 8,
+                        display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto',
                       }}>
                         <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
                         <p style={{ ...S.muted, margin: 0 }}>
