@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
 
 const TRANSCRIPT = [
   { role: 'user', content: 'hi there' },
@@ -215,6 +215,57 @@ test('documentFilename is filesystem-safe and slugged from the title', () => {
   assert.equal(documentFilename('Weekly Meal Plan', '2026-08-22-0200'), 'weekly-meal-plan-2026-08-22-0200.md')
   assert.equal(documentFilename('', '2026-08-22'), 'document-2026-08-22.md')
   assert.equal(documentFilename('!!!', '2026-08-22'), 'document-2026-08-22.md')
+})
+
+// ── extractArtifact / artifactFilename — livchat-artifacts-system ──
+test('a fenced artifact block with a language and title is extracted, and stripped from the surrounding text', () => {
+  const content = 'Here you go:\n\n```artifact tsx Countdown Timer\nexport default function CountdownTimer() {}\n```'
+  const r = extractArtifact(content)
+  assert.equal(r?.text, 'Here you go:')
+  assert.equal(r?.artifact.language, 'tsx')
+  assert.equal(r?.artifact.title, 'Countdown Timer')
+  assert.equal(r?.artifact.content, 'export default function CountdownTimer() {}')
+})
+
+test('no fence in the content → null, not an error', () => {
+  assert.equal(extractArtifact('just a normal reply'), null)
+  assert.equal(extractArtifact(''), null)
+  assert.equal(extractArtifact(null), null)
+  assert.equal(extractArtifact(undefined), null)
+})
+
+test('a fence with only a language and no title falls back to "Artifact"', () => {
+  const r = extractArtifact('```artifact python\nprint("hi")\n```')
+  assert.equal(r?.artifact.language, 'python')
+  assert.equal(r?.artifact.title, 'Artifact')
+})
+
+test('a fence with no language and no title defaults language to "text"', () => {
+  const r = extractArtifact('```artifact\nplain body\n```')
+  assert.equal(r?.artifact.language, 'text')
+  assert.equal(r?.artifact.title, 'Artifact')
+})
+
+test('an empty fence body yields no artifact (not a blank panel)', () => {
+  assert.equal(extractArtifact('```artifact js Empty\n\n```'), null)
+})
+
+test('only the FIRST fence is treated as the artifact (v1 scope: one per reply)', () => {
+  const r = extractArtifact('```artifact js First\none\n```\nmore text\n```artifact js Second\ntwo\n```')
+  assert.equal(r?.artifact.title, 'First')
+  assert.ok(r?.text.includes('```artifact js Second'))
+})
+
+test('a nested code sample inside the artifact body is NOT truncated at its own closing fence', () => {
+  const content = '```artifact md Setup Steps\n# Setup Steps\n```js\nconsole.log("hi")\n```\nMore context after the snippet\n```'
+  const r = extractArtifact(content)
+  assert.equal(r?.artifact.content, '# Setup Steps\n```js\nconsole.log("hi")\n```\nMore context after the snippet')
+})
+
+test('artifactFilename is filesystem-safe, slugged from the title, and extensioned by language', () => {
+  assert.equal(artifactFilename('Countdown Timer', 'tsx', '2026-09-08-0200'), 'countdown-timer-2026-09-08-0200.tsx')
+  assert.equal(artifactFilename('', 'js', '2026-09-08'), 'artifact-2026-09-08.js')
+  assert.equal(artifactFilename('Notes', 'unknownlang', '2026-09-08'), 'notes-2026-09-08.txt')
 })
 
 // ── extractOptions — general decision/options cards (livchat-decision-options-cards) ──

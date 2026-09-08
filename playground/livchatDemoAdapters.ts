@@ -50,6 +50,27 @@ export function commisReplyFor(userText: string): DemoReply {
         + '```',
     }
   }
+  // livchat-artifacts-system demo: a "recipe card artifact" ask gets a reply whose text
+  // carries a ```artifact fence (see livChatComposer.ts's extractArtifact) — opens in the
+  // dedicated side panel instead of an inline download, round-tripped through the actual
+  // rendered <LivChat>.
+  if (/recipe card artifact/i.test(userText)) {
+    return {
+      text: 'Here\'s a printable recipe card component — open the panel to see it rendered with syntax highlighting.\n\n'
+        + '```artifact tsx Chicken Stir-Fry Card\n'
+        + 'export default function RecipeCard() {\n'
+        + '  // Serves 4, ready in 25 minutes\n'
+        + '  const ingredients = ["chicken breast", "bell pepper", "soy sauce"]\n'
+        + '  return (\n'
+        + '    <div className="recipe-card">\n'
+        + '      <h2>Chicken Stir-Fry</h2>\n'
+        + '      {ingredients.map((item) => <li key={item}>{item}</li>)}\n'
+        + '    </div>\n'
+        + '  )\n'
+        + '}\n'
+        + '```',
+    }
+  }
   if (/meal plan document/i.test(userText)) {
     return {
       text: 'Here\'s your plan for the week — download it below to keep on the counter.\n\n'
