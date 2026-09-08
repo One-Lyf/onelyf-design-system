@@ -17,7 +17,7 @@ import {
   space, textStyle, radius,
   ThemeToggle,
   LivChat, livChatStylesheet,
-  type LivHat, type LivProposedAction, type LivActionQueue, type LivChatAction,
+  type LivHat, type LivProposedAction, type LivActionQueue, type LivChatAction, type LivSlashTool,
 } from '../src'
 import { cssVar } from '../src/theme'
 import {
@@ -67,18 +67,23 @@ function useDemoActionQueue(replyFor: (text: string) => ReturnType<typeof commis
   return { adapter, queue }
 }
 
-function DemoPanel({ hat, adapter, queue, actions }: {
+function DemoPanel({ hat, adapter, queue, actions, slashTools }: {
   hat: LivHat
   adapter: ReturnType<typeof useDemoActionQueue>['adapter']
   queue?: LivActionQueue
   actions?: LivChatAction[]
+  slashTools?: LivSlashTool[]
 }) {
   return (
     <div style={{
       flex: '1 1 380px', minWidth: 340, maxWidth: 480, height: 640,
       border: `1px solid ${cssVar.border}`, borderRadius: radius.lg, overflow: 'hidden',
     }}>
-      <LivChat hat={hat} adapter={adapter} actionQueue={queue} actions={actions} />
+      <LivChat hat={hat} adapter={adapter} actionQueue={queue} actions={actions} slashTools={slashTools}
+        onToolInvoke={(toolId, args) => {
+          // eslint-disable-next-line no-console
+          console.log('onToolInvoke', toolId, args)
+        }} />
     </div>
   )
 }
@@ -175,6 +180,20 @@ function LivChatDemo() {
     },
   ]
 
+  // livchat-slash-menu-canon demo registry — same shape docs/liv-composer-affordances.md
+  // spells out for the real Cash Stash Advisor wiring: a zero-arg tool that fires immediately
+  // on selection, and an args tool that opens the inline chip mini-form before it runs.
+  const advisorSlashTools: LivSlashTool[] = [
+    { id: 'subscriptions.list_recurring', command: 'subscriptions', label: 'List recurring charges' },
+    {
+      id: 'budget.set_category_limit', command: 'budget-limit', label: 'Set a monthly limit for a category',
+      args: [
+        { name: 'category', label: 'Category', placeholder: 'Groceries', required: true },
+        { name: 'amount', label: 'Monthly limit ($)', placeholder: '400', required: true },
+      ],
+    },
+  ]
+
   return (
     <div style={{
       minHeight: '100vh', background: cssVar.bg, color: cssVar.ink,
@@ -193,7 +212,7 @@ function LivChatDemo() {
       </div>
       <div style={{ display: 'flex', gap: space.lg, flexWrap: 'wrap' }}>
         <DemoPanel hat={commisHat} adapter={commis.adapter} queue={commis.queue} />
-        <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} />
+        <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} slashTools={advisorSlashTools} />
         <DemoPanel hat={streamHat} adapter={streamAdapter} />
         <DockDemoPanel hat={dockHat} adapter={dockAdapter} />
       </div>
