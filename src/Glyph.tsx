@@ -6,6 +6,10 @@
 //                        intelligence woven through the network.
 //   variant="essence" → reduced single-color mark for small / mono uses
 //                        (favicon, tiny UI).
+//   variant="rooted"   → "Rooted Connection" brand-board variant (Section B.5):
+//                        same crown knot and junction as live, roots extending
+//                        into a fuller mycelium cascade. Used for the Liv
+//                        Console v1 app icon, not a chat-time state.
 //
 // VECTOR marks, traced from the approved GPT brand board (crisp at any size;
 // every tendril tapers to a point, north petal closes as a knot loop). live's
@@ -15,13 +19,15 @@
 import crestUrl from './assets/glyph-crest.svg'
 import liveUrl from './assets/glyph-live.svg'
 import essenceUrl from './assets/glyph-essence.svg'
+import rootedUrl from './assets/glyph-rooted.svg'
 
-export type GlyphVariant = 'crest' | 'live' | 'essence'
+export type GlyphVariant = 'crest' | 'live' | 'essence' | 'rooted'
 
 const URLS: Record<GlyphVariant, string> = {
   crest: crestUrl,
   live: liveUrl,
   essence: essenceUrl,
+  rooted: rootedUrl,
 }
 
 export interface GlyphProps {
@@ -37,7 +43,7 @@ export default function Glyph({ variant = 'crest', size = 96, alt }: GlyphProps)
   return (
     <img
       src={src}
-      alt={alt ?? `OneLyf ${variant === 'live' ? 'Liv' : 'mark'}`}
+      alt={alt ?? `OneLyf ${variant === 'live' ? 'Liv' : variant === 'rooted' ? 'Rooted Connection' : 'mark'}`}
       style={{ display: 'block', width: size, height: 'auto', objectFit: 'contain' }}
     />
   )
