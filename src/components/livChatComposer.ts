@@ -200,6 +200,62 @@ export function documentFilename(title: string, stamp: string): string {
   return `${slug}-${stamp}.md`
 }
 
+// ─── Artifacts panel (livchat-artifacts-system) — v1: code artifacts ─────────
+// A liv reply can flag a piece of CODE as a live-rendered artifact, distinct from the
+// plain-text ```document convention above: DS opens it in the dedicated side panel
+// (draggable split, DS-token syntax highlighting) instead of an inline download card.
+// Same fenced-block shape as ```document, with the language as the first word on the
+// opening line and the title as the rest of it:
+//
+//   ```artifact tsx Countdown Timer
+//   export default function CountdownTimer() { ... }
+//   ```
+//
+// v1 supports ONE artifact per reply (the first fence found), same "ship the smallest
+// real thing" scoping as ```document. A reply's SUBSEQUENT artifact fences (or a later
+// turn's fence sharing the same title) are how Liv revises an artifact in place — see
+// LivChat's own artifact-panel state, which keys on title to decide new vs. update.
+export interface LivArtifact { title: string; language: string; content: string }
+
+const ARTIFACT_OPEN = /```artifact([^\n]*)\n/
+
+export function extractArtifact(content: string | null | undefined): { text: string; artifact: LivArtifact } | null {
+  if (!content) return null
+  const found = findFencedBlock(content, ARTIFACT_OPEN)
+  if (!found) return null
+  const body = found.body.trim()
+  if (!body) return null // an empty fence is treated as no artifact, not a blank one
+  const info = (found.openMatch[1] || '').trim()
+  const [langToken, ...titleParts] = info.split(/\s+/).filter(Boolean)
+  const language = (langToken || 'text').toLowerCase()
+  const title = titleParts.join(' ') || 'Artifact'
+  const text = (content.slice(0, found.index) + content.slice(found.end)).trim()
+  return { text, artifact: { title, language, content: body } }
+}
+
+// File extension per language tag, for the panel's Download action. Falls back to
+// `.txt` for anything not in this list rather than guessing — an unrecognized
+// language tag (a typo, a language DS hasn't listed here yet) shouldn't produce a
+// misleading extension on the downloaded file.
+const ARTIFACT_EXT: Record<string, string> = {
+  javascript: 'js', js: 'js', jsx: 'jsx',
+  typescript: 'ts', ts: 'ts', tsx: 'tsx',
+  python: 'py', py: 'py',
+  json: 'json',
+  css: 'css',
+  html: 'html',
+  bash: 'sh', sh: 'sh', shell: 'sh',
+  markdown: 'md', md: 'md',
+  sql: 'sql',
+  yaml: 'yaml', yml: 'yml',
+}
+
+export function artifactFilename(title: string, language: string, stamp: string): string {
+  const slug = (title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'artifact'
+  const ext = ARTIFACT_EXT[language.toLowerCase()] || 'txt'
+  return `${slug}-${stamp}.${ext}`
+}
+
 // ─── Decision / options cards ────────────────────────────────────────────────
 // A GENERAL options primitive (livchat-decision-options-cards): Liv can offer a set of
 // labelled choices at any conversational decision point — NOT the per-app, pre-registered

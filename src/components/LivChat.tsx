@@ -12,11 +12,12 @@
 // state write is guarded by an activeId ref so a slow reply for session A can
 // never paint over session B.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument, type LivArtifact } from './livChatComposer'
+import { highlightCode, type SyntaxTokenKind } from './livChatSyntaxHighlight'
 import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
 import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode, VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity, DEFAULT_COMPACT_THRESHOLD } from './livChatModes'
@@ -336,6 +337,21 @@ export interface LivChatAction {
 const ATTACH_MAX_BYTES = 20 * 1024 * 1024 // 20 MB
 const ATTACH_ALLOWED = ['image/*', 'application/pdf', 'text/plain', 'text/csv', '.pdf', '.txt', '.csv']
 const ATTACH_ACCEPT = 'image/*,.pdf,application/pdf,.txt,.csv,text/plain,text/csv'
+// Artifacts panel divider position, persisted across sessions per browser (Jeff, artifacts-panel
+// decision #1: "user-draggable divider, persist last position, default ~45/55").
+const ARTIFACT_SPLIT_KEY = 'onelyf-livchat-artifact-split'
+// Artifacts panel syntax colors, derived from the existing DS token palette (Jeff, artifacts-panel
+// decision #4) rather than an off-the-shelf highlight theme. Each is already theme-reactive
+// (cssVar resolves to the light/dark CSS variable), so the panel follows the app's theme with no
+// separate dark-mode palette to maintain here.
+const SYNTAX_COLOR: Record<SyntaxTokenKind, string> = {
+  keyword: cssVar.primary,
+  string: cssVar.warning,
+  number: cssVar.gold,
+  comment: cssVar.dim,
+  function: cssVar.danger,
+  plain: cssVar.ink,
+}
 
 // The model picker's fallback list + curation policy live in ./livChatModels
 // (DEFAULT_MODELS / DEFAULT_MODEL_ID / curateLivModels), imported above. Live discovery
@@ -416,6 +432,8 @@ const MenuI = () => <svg {...svg}><line x1="3" y1="6" x2="21" y2="6" /><line x1=
 const DownloadI = () => <svg {...svg}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 const FileTextI = () => <svg {...svg}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
 const ShieldI = () => <svg {...svg}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+const CodeI = () => <svg {...svg}><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
+const ExternalLinkI = () => <svg {...svg}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
 
 function ChannelIcon({ channel }: { channel?: string }) {
   if (channel === 'phone') return <PhoneI />
@@ -694,6 +712,32 @@ export const livChatStylesheet = `
    is the positioning escape; the inline overrides handle the size/corner clamp. */
 .lc-root[data-dock="full"] { position: fixed; inset: 0; width: auto; max-width: 100%; max-height: 100vh; border-radius: 0; z-index: 60; }
 .lc-root[data-dock="full"] .lc-transcript { max-height: none; }
+/* Artifacts panel (livchat-artifacts-system) — a draggable vertical split inside the same grid
+   cell .lc-main used to fill alone; .lc-main and .lc-artifact-panel's flex-basis percentages are
+   set inline (the live drag value), this stylesheet only handles the divider's own look/feel and
+   the narrow-viewport fallback below. */
+.lc-artifact-divider {
+  width: 6px; flex: 0 0 auto; cursor: col-resize; background: transparent;
+  position: relative; touch-action: none;
+}
+.lc-artifact-divider::after {
+  content: ''; position: absolute; inset: 0 2px; border-radius: 2px; background: var(--ds-border-bright);
+  transition: background .12s ease;
+}
+.lc-artifact-divider:hover::after, .lc-artifact-divider:active::after { background: var(--lc-accent); }
+.lc-artifact-panel { animation: lc-fade-in .14s ease; }
+.lc-artifact-panel pre { animation: none; }
+/* Mobile overflow guard: a side-by-side 45/55 split has no room to breathe under ~620px (each
+   pane would land under 180px). Stack instead — chat on top, artifact below, drag disabled (a
+   fiddly touch-drag on a phone-width divider isn't worth shipping over a plain 50/50 stack). The
+   !important pair overrides the live drag value that JS sets inline at wider viewports. */
+@media (max-width: 620px) {
+  .lc-split[data-artifact-open="true"] { flex-direction: column; }
+  .lc-split[data-artifact-open="true"] .lc-main,
+  .lc-split[data-artifact-open="true"] .lc-artifact-panel { flex: 1 1 50% !important; min-height: 160px; min-width: 0; }
+  .lc-split[data-artifact-open="true"] .lc-artifact-divider { display: none; }
+  .lc-split[data-artifact-open="true"] .lc-artifact-panel { border-left: 0; border-top: 1px solid var(--ds-border); }
+}
 `
 
 // Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
@@ -830,6 +874,21 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // copy + download. Opened from the header transcript button.
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [transcriptFormat, setTranscriptFormat] = useState<'markdown' | 'plain' | 'json'>('markdown')
+  // Artifacts panel (livchat-artifacts-system) v1 — see its own effects below (search
+  // "Artifacts panel — PRIMARY") for the auto-open/live-update rule, and the
+  // ARTIFACT_SPLIT_KEY constant for the persisted divider position. `artifact` null means
+  // the panel is closed.
+  const [artifact, setArtifact] = useState<LivArtifact | null>(null)
+  const [artifactCopied, setArtifactCopied] = useState(false)
+  const [splitPct, setSplitPct] = useState<number>(() => {
+    try {
+      const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(ARTIFACT_SPLIT_KEY)
+      const n = raw ? parseFloat(raw) : NaN
+      return Number.isFinite(n) && n >= 20 && n <= 80 ? n : 45
+    } catch { return 45 }
+  })
+  const splitRef = useRef<HTMLDivElement>(null)
+  const splitDraggingRef = useRef(false)
   const [keyInput, setKeyInput] = useState('')
   const [modelInput, setModelInput] = useState(models[0]?.id ?? DEFAULT_MODEL_ID)
   // Opt-in Brain-menu controls. Local mirror of the persisted value (loaded via key.get); a
@@ -1043,6 +1102,52 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     const el = transcriptRef.current
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages, streaming])
+
+  // Artifacts panel: persist the divider position across sessions (per browser).
+  useEffect(() => {
+    try { window.localStorage.setItem(ARTIFACT_SPLIT_KEY, String(splitPct)) } catch { /* ignore (private mode, quota) */ }
+  }, [splitPct])
+
+  // Artifacts panel — PRIMARY open/update path: once a liv reply commits to `messages`
+  // (after the post-send `adapter.messages.list` reload), check it for an artifact. This
+  // is the reliable trigger — an adapter that delivers its whole reply in one onChunk call
+  // right before resolving (the common non-token-streaming shape; see the demo's
+  // createDemoAdapter) never actually renders a non-empty `streaming` value at all: React
+  // batches that single setStreaming(acc) together with the setStreaming('') that follows
+  // once the awaited send() resolves, so an effect keyed on `streaming` alone silently never
+  // fires for that adapter shape (caught by /forge's own visual verification, not by the
+  // build). `messages` doesn't have that race — it's its own separate, later state commit.
+  //
+  // `artifactUserClosedRef` is reset here too, the instant a NEW turn starts (the optimistic
+  // USER message commit, which every adapter produces synchronously at send() — a more
+  // reliable "turn started" signal than watching `streaming` transition, since not every
+  // adapter guarantees a visible streaming transition at all). A manual close during the
+  // reply that follows sticks for that one reply; the next turn always gets a fresh chance.
+  const artifactUserClosedRef = useRef(false)
+  const artifactAutoOpenedIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (!last) return
+    if (last.role === 'user') { artifactUserClosedRef.current = false; return }
+    if (last.role !== 'liv') return
+    if (artifactAutoOpenedIdRef.current === last.id) return
+    artifactAutoOpenedIdRef.current = last.id
+    if (artifactUserClosedRef.current) return
+    const found = extractArtifact(last.content)
+    if (found) setArtifact(found.artifact)
+  }, [messages])
+
+  // Artifacts panel — BONUS live-update path: for an adapter that genuinely delivers
+  // incremental chunks with real gaps between them (e.g. createStreamingDemoAdapter's
+  // word-by-word harness), this fills the panel in as it streams rather than only once the
+  // turn commits. Harmless when it never fires — the PRIMARY effect above still covers that
+  // reply once it lands in `messages`. Shares the same close flag as the primary path so a
+  // mid-stream close isn't immediately overridden once the reply commits.
+  useEffect(() => {
+    if (!streaming || artifactUserClosedRef.current) return
+    const found = extractArtifact(streaming)
+    if (found) setArtifact(found.artifact)
+  }, [streaming])
 
   // A session switch (or a freshly loaded chat) should start pinned to the newest message,
   // regardless of where the user had scrolled in the previous session.
@@ -1420,6 +1525,85 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     }
   }
 
+  // ─── Artifacts panel actions (livchat-artifacts-system v1) ─────────────────
+  function closeArtifact() {
+    artifactUserClosedRef.current = true
+    setArtifact(null)
+  }
+
+  async function copyArtifact() {
+    if (!artifact) return
+    try {
+      await navigator.clipboard.writeText(artifact.content)
+      setArtifactCopied(true)
+      setTimeout(() => setArtifactCopied(false), 1500)
+    } catch { setMsg('Could not copy — clipboard access was blocked.') }
+  }
+
+  function downloadArtifact() {
+    if (!artifact) return
+    try {
+      const d = new Date()
+      const p = (n: number) => String(n).padStart(2, '0')
+      const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+      const blob = new Blob([artifact.content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = artifactFilename(artifact.title, artifact.language, stamp)
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    } catch (e) {
+      console.error('artifact download failed', e)
+      setMsg('Could not download this artifact.')
+    }
+  }
+
+  // "Open in new tab / full-screen" (decision #2's third action for v1 — Publish/share-link
+  // is a later phase, since it needs real hosting). No backend involved: a self-contained
+  // HTML page holding the escaped source, opened from a Blob URL.
+  function expandArtifact() {
+    if (!artifact) return
+    try {
+      const esc = artifact.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const titleEsc = artifact.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${titleEsc}</title>` +
+        `<style>body{margin:0;background:#171b16;color:#e8e4d6;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}` +
+        `pre{margin:0;padding:24px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>` +
+        `<body><pre>${esc}</pre></body></html>`
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000) // give the new tab time to finish loading it
+    } catch (e) {
+      console.error('artifact expand failed', e)
+      setMsg('Could not open this artifact in a new tab.')
+    }
+  }
+
+  function onArtifactDividerPointerDown(e: ReactPointerEvent) {
+    e.preventDefault()
+    const el = splitRef.current
+    if (!el) return
+    splitDraggingRef.current = true
+    const move = (ev: PointerEvent) => {
+      if (!splitDraggingRef.current) return
+      const rect = el.getBoundingClientRect()
+      if (rect.width <= 0) return
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100
+      setSplitPct(Math.min(80, Math.max(20, pct)))
+    }
+    const up = () => {
+      splitDraggingRef.current = false
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
   async function saveKey() {
     if (!adapter.key) return
     const patch: { apiKey?: string; model?: string } = {}
@@ -1603,7 +1787,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         </aside>
         )}
 
-        <div className="lc-main" style={S.main}>
+        <div className="lc-split" ref={splitRef} data-artifact-open={artifact ? 'true' : undefined} style={{ display: 'flex', flex: 1, minWidth: 0 }}>
+        <div className="lc-main" style={{ ...S.main, ...(artifact ? { flex: `0 0 ${splitPct}%`, minWidth: 0 } : null) }}>
           <div className="lc-transcript" ref={transcriptRef} style={{ ...S.transcript, ...(dock === 'full' ? { maxHeight: 'none' } : null) }} onScroll={onTranscriptScroll}>
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
@@ -1635,14 +1820,21 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               // convention). Only checked on liv turns — a user's own message is never
               // parsed as a document, even if it happens to contain a ```document fence.
               const doc = m.role === 'liv' ? extractDocument(m.content) : null
+              // livchat-artifacts-system: a liv reply can flag CODE as a live-rendered artifact
+              // (```artifact lang Title) instead of a plain downloadable ```document — opens in
+              // the dedicated side panel (see the artifact state/effects above `send`) rather
+              // than an inline download. Checked after `doc` (document wins the rare both-fence
+              // case, same precedence style as doc-vs-options below).
+              const artifactFound = !doc && m.role === 'liv' ? extractArtifact(m.content) : null
               // livchat-decision-options-cards: a liv reply can offer labelled choices via an
               // ```options fence; DS renders them as tappable cards and a tap sends that choice
               // as the next turn. Always PARSED on liv turns (so the raw fence is stripped from
               // the transcript even on older messages), but only the MOST-RECENT message's cards
               // stay tappable — stale choices from an earlier turn shouldn't re-fire once the
-              // conversation has moved on. Documents take precedence in the rare both-fence case.
+              // conversation has moved on. Documents/artifacts take precedence in the rare
+              // multi-fence case.
               const isLast = m.id === messages[messages.length - 1]?.id
-              const opts = !doc && m.role === 'liv' ? extractOptions(m.content) : null
+              const opts = !doc && !artifactFound && m.role === 'liv' ? extractOptions(m.content) : null
               const optionsLive = !!opts && isLast && !sending
               return (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
@@ -1706,6 +1898,20 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                         <DownloadI />
                       </button>
                     </div>
+                  </>
+                ) : artifactFound ? (
+                  <>
+                    {artifactFound.text && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}><Linkified text={artifactFound.text} onLinkTap={handleLinkTap} /></div>}
+                    <button
+                      type="button"
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '8px 10px', background: cssVar.surface, cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                      onClick={() => { artifactUserClosedRef.current = false; setArtifact(artifactFound.artifact) }}
+                      title={`Open ${artifactFound.artifact.title} in the artifacts panel`}
+                    >
+                      <CodeI />
+                      <span style={{ ...textStyle('bodySm'), flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{artifactFound.artifact.title}</span>
+                      <span style={{ ...textStyle('caption'), color: cssVar.dim }}>{artifactFound.artifact.language}</span>
+                    </button>
                   </>
                 ) : (
                   m.content && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><Linkified text={m.content} onLinkTap={handleLinkTap} /></div>
@@ -2179,6 +2385,45 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               )}
             </div>
           </div>
+        </div>
+
+        {artifact && (
+          <>
+            <div
+              className="lc-artifact-divider"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize the artifact panel"
+              onPointerDown={onArtifactDividerPointerDown}
+            />
+            <div className="lc-artifact-panel" style={{ flex: `0 0 ${100 - splitPct}%`, minWidth: 0, display: 'flex', flexDirection: 'column', background: cssVar.surface, borderLeft: `1px solid ${cssVar.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: `1px solid ${cssVar.border}` }}>
+                <CodeI />
+                <span style={{ ...textStyle('bodySm'), fontWeight: 700, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{artifact.title}</span>
+                <span style={{ ...textStyle('caption'), color: cssVar.dim }}>{artifact.language}</span>
+                <button type="button" className="lc-iconbtn" style={S.iconbtn} title="Copy" aria-label="Copy artifact" onClick={copyArtifact}>
+                  {artifactCopied ? <CheckI /> : <CopyI />}
+                </button>
+                <button type="button" className="lc-iconbtn" style={S.iconbtn} title="Download" aria-label="Download artifact" onClick={downloadArtifact}>
+                  <DownloadI />
+                </button>
+                <button type="button" className="lc-iconbtn" style={S.iconbtn} title="Open in a new tab" aria-label="Open artifact in a new tab" onClick={expandArtifact}>
+                  <ExternalLinkI />
+                </button>
+                <button type="button" className="lc-iconbtn" style={S.iconbtn} title="Close" aria-label="Close artifact panel" onClick={closeArtifact}>
+                  <CloseI />
+                </button>
+              </div>
+              <pre style={{ margin: 0, flex: 1, overflow: 'auto', padding: 12, ...textStyle('caption'), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <code>
+                  {highlightCode(artifact.content, artifact.language).map((tok, i) => (
+                    <span key={i} style={{ color: SYNTAX_COLOR[tok.kind], fontStyle: tok.kind === 'comment' ? 'italic' : 'normal' }}>{tok.text}</span>
+                  ))}
+                </code>
+              </pre>
+            </div>
+          </>
+        )}
         </div>
       </div>
 
