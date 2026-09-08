@@ -259,10 +259,14 @@ weeks of work with clear payoff only for Cash Stash. Cheapest path: A3 above (ha
 key-provider hints; the adapter's `key.get/set` already accepts opaque strings, so any
 provider works if the app's edge fn does).
 
-**Q4. Manual "turn this into…" action menu — retire or preserve?** Now that Commis
-auto-surfaces proposed actions after every turn (`proposed[]` from `askCommisAuto`), the
-manual menu is a legacy fallback. If you'd rather retire it, we don't need `B3
-renderComposerExtras` and the composer stays cleaner.
+**Q4. Manual "turn this into…" action menu — retire or preserve?** RESOLVED (Jeff,
+2026-08-18, `docs/liv-composer-affordances.md`): preserve, and relabel. The manual menu is
+NOT a legacy fallback superseded by Commis's auto-surfaced proposed actions — the two are
+canon-primary, permanent, complementary entry points into the same tool registry (NL
+auto-call for the happy path; the manual `/`-menu, shipped DS-wide as
+`livchat-slash-menu-canon`, for discoverability/precision/speed/accountability). `B3
+renderComposerExtras`'s successor is the `slashTools`/`onToolInvoke` primitive on
+`<LivChat>` — keep it, every app registers its tool set there.
 
 **Q5. Migration ordering.** Three sensible sequences:
 - **(i) Federation-additive first** (A1 abort + A2 toolLabels only, no consumer migration

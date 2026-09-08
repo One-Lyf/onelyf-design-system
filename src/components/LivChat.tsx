@@ -259,6 +259,15 @@ export interface LivChatProps {
   // chef's-knife menu, Advisor's manual "add to budget" etc.). A canonical popover — DS owns
   // the button + list layout + open/close; the app supplies the LABEL + HANDLER per item.
   actions?: LivChatAction[]
+  // `/`-menu primitive (livchat-slash-menu-canon, docs/liv-composer-affordances.md) — a
+  // Claude-Code-style command popover fed by the app's tool registry. NOT a fallback for NL
+  // auto-call; a second entry point into the SAME tools for discoverability/precision/speed/
+  // accountability (see the doc's "why both" section). Typing `/` at the start of the composer
+  // opens a filterable popover of `slashTools`; selecting one with `args` opens an inline chip
+  // mini-form; submitting calls `onToolInvoke` with the tool id + filled args — the host
+  // dispatches through whatever handler its NL path already uses for that same registry entry.
+  slashTools?: LivSlashTool[]
+  onToolInvoke?: (toolId: string, args: Record<string, string>) => void
   // Fires from inside the click handler for the Hands-free (speaker) toggle, with the new
   // on/off state. Consumers use this for one-shot side effects that need to happen under a
   // user-gesture stack frame — iOS TTS audio-session unlock, wake-word dictation start,
@@ -326,6 +335,27 @@ export interface LivChatAction {
   hint?: string       // muted second line ("Extract the recipe from this chat")
   onSelect(): void | Promise<void>
   disabled?: boolean
+}
+
+// One field in a slash-tool's argument mini-form (livchat-slash-menu-canon). Text-only for v1 —
+// covers every registered tool surfaced so far (subscriptions, budget line-items, etc.); a
+// typed/select variant can extend this later without breaking existing registries.
+export interface LivSlashToolArg {
+  name: string          // key passed back in the args map onToolInvoke receives
+  label: string         // shown above the field in the chip's mini-form
+  placeholder?: string
+  required?: boolean
+}
+
+// One entry in the `/`-menu's tool registry — the SAME registry entry the app's NL auto-call
+// path already dispatches through; this is just the manual, typed entry point into it. DS owns
+// the trigger detection + popover + chip UI; the app supplies the list + `onToolInvoke` handler.
+export interface LivSlashTool {
+  id: string                // registry key handed back to onToolInvoke, e.g. 'subscriptions.list_recurring'
+  command: string           // typed after `/` to match, e.g. 'subscriptions' -> `/subscriptions`
+  label: string             // short description shown in the popover row
+  icon?: ReactNode
+  args?: LivSlashToolArg[]  // omit for a zero-arg tool that fires immediately on selection
 }
 
 // Attachment policy — what the composer's file picker will accept. Images render as thumbnails;
@@ -752,7 +782,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, dock = 'panel', onMaximize, onRestore, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
+export default function LivChat({ hat, adapter, onState, onMinimize, onClose, dock = 'panel', onMaximize, onRestore, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, slashTools, onToolInvoke, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const showKey = hat.enableKey !== false && !!adapter.key
   const showAttach = hat.enableAttachments !== false
@@ -934,6 +964,44 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const [applyAllBusy, setApplyAllBusy] = useState(false)
   // The composer's actions menu open/close (Commis's chef's-knife popover).
   const [actionsOpen, setActionsOpen] = useState(false)
+  // `/`-menu state (livchat-slash-menu-canon): open while the draft is a bare `/command` typed
+  // at the very start of the composer (Claude-Code-style — no mid-sentence triggering), the
+  // arrow-key-selected row, and the pending chip once a tool with args has been picked but not
+  // yet submitted. slashIndex is clamped at render time against the current filtered list so a
+  // keystroke that shrinks the list can never leave it pointing past the end.
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  // True once the user explicitly dismisses the popover (Escape or click-out) while still mid
+  // slash-token, so further keystrokes that stay in slash-form (e.g. "/x" -> "/xy") don't just
+  // reopen it — matches Claude Code, where Escape sticks until you leave slash-form entirely
+  // (clear the token or add a space) and start a fresh one.
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  const [slashPending, setSlashPending] = useState<{ tool: LivSlashTool; args: Record<string, string> } | null>(null)
+  const slashMatch = /^\/(\S*)$/.exec(draft)
+  const filteredSlashTools = slashOpen && slashMatch
+    ? (slashTools ?? []).filter((t) => t.command.toLowerCase().startsWith(slashMatch[1].toLowerCase()))
+    : []
+  const slashActiveIndex = filteredSlashTools.length > 0 ? Math.min(slashIndex, filteredSlashTools.length - 1) : 0
+  // Selecting a zero-arg tool fires onToolInvoke immediately (same shape as an `actions` item's
+  // onSelect); a tool with args opens the inline chip mini-form instead so the user sees exactly
+  // what's about to run before it does (canon rule: "always ask, never presume" applied to
+  // Jeff's own tools, per docs/liv-composer-affordances.md).
+  function selectSlashTool(tool: LivSlashTool) {
+    setSlashOpen(false)
+    setDraft('')
+    if (!tool.args || tool.args.length === 0) {
+      try { onToolInvoke?.(tool.id, {}) } catch (e) { console.error('onToolInvoke threw', e) }
+      return
+    }
+    setSlashPending({ tool, args: Object.fromEntries(tool.args.map((a) => [a.name, ''])) })
+  }
+  function runSlashPending() {
+    if (!slashPending) return
+    const { tool, args } = slashPending
+    if (tool.args?.some((a) => a.required && !args[a.name]?.trim())) return
+    setSlashPending(null)
+    try { onToolInvoke?.(tool.id, args) } catch (e) { console.error('onToolInvoke threw', e) }
+  }
   // The external-link guard (livchat-external-link-guard): the URL currently pending a tap-
   // through, or null when no guard is showing. Re-set (not toggled) on every tap so the
   // modal fires on EVERY external link, not just the first one this session.
@@ -2031,11 +2099,90 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 ))}
               </div>
             )}
-            <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
-              placeholder={hat.placeholder || 'Message Liv…'}
-              value={draft} onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => { if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing, enterSends)) { e.preventDefault(); send() } }}
-              rows={1} />
+            {slashPending && (
+              <div style={{ background: cssVar.track, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: 8, marginBottom: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ ...textStyle('bodySm'), fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {slashPending.tool.icon ?? <ToolI />} /{slashPending.tool.command}
+                  </span>
+                  <button type="button" className="lc-iconbtn" title="Cancel" aria-label="Cancel"
+                    onClick={() => setSlashPending(null)} style={{ ...S.composerIconbtn, width: 22, height: 22 }}>
+                    <CloseI />
+                  </button>
+                </div>
+                {slashPending.tool.args!.map((a) => (
+                  <label key={a.name} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ ...textStyle('caption'), color: cssVar.mid }}>{a.label}{a.required && ' *'}</span>
+                    <input className="ds-input" style={S.input} placeholder={a.placeholder}
+                      value={slashPending.args[a.name] ?? ''}
+                      onChange={(e) => { const v = e.target.value; setSlashPending((p) => p && ({ ...p, args: { ...p.args, [a.name]: v } })) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runSlashPending() } else if (e.key === 'Escape') { e.preventDefault(); setSlashPending(null) } }} />
+                  </label>
+                ))}
+                <button type="button" className="ds-btn" style={S.primaryBtn}
+                  disabled={slashPending.tool.args!.some((a) => a.required && !slashPending.args[a.name]?.trim())}
+                  onClick={runSlashPending}>Run</button>
+              </div>
+            )}
+            <div style={{ position: 'relative' }}>
+              {/* `/`-menu popover (livchat-slash-menu-canon) — opens above the composer when the
+                  draft is a bare `/command` at the very start, filtered as the user keeps typing.
+                  Arrow keys move slashIndex; Enter/Tab/click selects; Escape dismisses without
+                  clearing the draft (handled in the textarea's onKeyDown below). */}
+              {filteredSlashTools.length > 0 && (
+                <>
+                  {/* Click-out overlay, same technique as the composer actions-menu popover
+                      above: a full-viewport transparent div under the popover (but over
+                      everything else) that dismisses on any tap outside it. Needed because
+                      clicking away doesn't otherwise change `draft`, so without this the
+                      popover would stay visually open until the next keystroke or Escape. */}
+                  <div onClick={() => { setSlashOpen(false); setSlashDismissed(true) }}
+                    style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
+                  <div className="lc-slash-menu" role="listbox" aria-label="Tools" style={{
+                    position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4, zIndex: 31,
+                    maxHeight: 220, overflowY: 'auto',
+                    background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.md,
+                    boxShadow: 'var(--ds-shadow-card)', padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
+                  }}>
+                    {filteredSlashTools.map((t, i) => (
+                      <button key={t.id} type="button" role="option" aria-selected={i === slashActiveIndex}
+                        onMouseEnter={() => setSlashIndex(i)}
+                        onClick={() => selectSlashTool(t)}
+                        style={{ ...textStyle('bodySm'), textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8,
+                          background: i === slashActiveIndex ? cssVar.track : 'transparent',
+                          border: 0, borderRadius: radius.sm, padding: '6px 8px', cursor: 'pointer', color: cssVar.ink }}>
+                        <span style={{ display: 'inline-flex', width: 16, flexShrink: 0 }}>{t.icon ?? <ToolI />}</span>
+                        <span style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span>/{t.command}</span>
+                          <span style={{ ...textStyle('caption'), color: cssVar.mid }}>{t.label}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
+                placeholder={hat.placeholder || 'Message Liv…'}
+                value={draft}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setDraft(v)
+                  setSlashIndex(0)
+                  if (!slashTools || slashTools.length === 0) return
+                  if (/^\/(\S*)$/.test(v)) { if (!slashDismissed) setSlashOpen(true) }
+                  else { setSlashOpen(false); setSlashDismissed(false) }
+                }}
+                onKeyDown={(e) => {
+                  if (slashOpen && filteredSlashTools.length > 0) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % filteredSlashTools.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + filteredSlashTools.length) % filteredSlashTools.length); return }
+                    if (e.key === 'Escape') { e.preventDefault(); setSlashOpen(false); setSlashDismissed(true); return }
+                    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectSlashTool(filteredSlashTools[slashActiveIndex]); return }
+                  }
+                  if (shouldSendOnEnter(e.key, e.shiftKey, e.nativeEvent.isComposing, enterSends)) { e.preventDefault(); send() }
+                }}
+                rows={1} />
+            </div>
             {/* Toolbar row — canonical order per onelyf-planning/docs/liv-chat-canon.md:
                 `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑`. Speaker + mic sit right
                 next to the send button. Brain pill holds model + API key + settings that
