@@ -481,7 +481,7 @@ function ModalityPill({ modality }: { modality?: string }) {
       background: voice ? 'color-mix(in srgb, var(--lc-accent) 22%, transparent)' : cssVar.track,
       color: voice ? 'var(--lc-accent)' : cssVar.mid,
     }}>
-      {voice ? <MicI /> : <KeyboardI />}{voice ? 'voice' : 'text'}
+      {voice ? <MicI /> : <KeyboardI />}{voice ? 'Voice' : 'Text'}
     </span>
   )
 }
@@ -573,10 +573,11 @@ function ExternalLinkModal({ url, safetyOpen, onToggleSafety, onOpen, onClose }:
         role="dialog"
         aria-modal="true"
         aria-labelledby="lc-link-guard-title"
+        className="lc-glass"
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           zIndex: 101, width: 'min(360px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
-          background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.lg,
+          border: `1px solid ${cssVar.border}`, borderRadius: radius.lg,
           boxShadow: 'var(--ds-shadow-card)', padding: space.md, boxSizing: 'border-box',
           display: 'flex', flexDirection: 'column', gap: space.sm,
         }}
@@ -768,6 +769,60 @@ export const livChatStylesheet = `
   .lc-split[data-artifact-open="true"] .lc-artifact-divider { display: none; }
   .lc-split[data-artifact-open="true"] .lc-artifact-panel { border-left: 0; border-top: 1px solid var(--ds-border); }
 }
+/* ── Liquid Glass (Jeff, live 2026-09-08, broadened) ─────────────────────────────────────────
+   iOS-26-style translucent frosted material for every popover/sheet/menu that renders ABOVE the
+   chat transcript (Brain sheet, actions menu, slash menu, transcript viewer, link-guard modal —
+   the app's own side panel + Chat/Builder dropdown apply this same class at the app level).
+   !important on background/backdrop-filter because these elements also set an opaque
+   background: cssVar.surface inline (kept as a graceful fallback for the rare browser with no
+   backdrop-filter support at all — the !important here only wins where the property IS
+   supported, per the @supports guard). */
+.lc-glass {
+  border: 1px solid var(--ds-border-bright);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .lc-glass {
+    background: color-mix(in srgb, var(--ds-surface) 72%, transparent) !important;
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+  }
+}
+/* ── Brain bottom sheet ───────────────────────────────────────────────────────────────────── */
+.lc-sheet-scrim { animation: lc-fade-in .16s ease; }
+.lc-brain-sheet { animation: lc-sheet-up .22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes lc-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.lc-sheet-handle {
+  width: 36px; height: 4px; border-radius: 2px; background: var(--ds-border-bright);
+  margin: 0 auto 4px; flex: 0 0 auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-sheet-scrim, .lc-brain-sheet { animation: none; }
+}
+/* ── Animated Liv-state glyph (idle / thinking / running-a-workflow) ─────────────────────────
+   The SAME canonical mark (never a new one), motion-only. Idle breathes slowly; thinking
+   pulses faster; running-a-workflow adds a steady rotation, reading as active work in
+   progress. Respects prefers-reduced-motion (a static glyph is always a safe fallback). */
+.lc-glyph-idle { animation: lc-glyph-breathe 3s ease-in-out infinite; }
+.lc-glyph-thinking { animation: lc-glyph-breathe 1.1s ease-in-out infinite; }
+.lc-glyph-running { animation: lc-glyph-spin 2.2s linear infinite; }
+@keyframes lc-glyph-breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .72; transform: scale(0.94); } }
+@keyframes lc-glyph-spin { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(18deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .lc-glyph-idle, .lc-glyph-thinking, .lc-glyph-running { animation: none; }
+}
+/* 'Thinking'/'Working' status label (pairs with the run-time counter next to it) — same pulse
+   technique as the existing .lc-ellipsis caret dots. */
+.lc-thinking-label { animation: lc-pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .lc-thinking-label { animation: none; }
+}
+/* ── iOS auto-zoom fix (Jeff, live 2026-09-08) ────────────────────────────────────────────────
+   Safari zooms the whole viewport on focusing any input/textarea/select under 16px. LivChat's
+   body-text scale is 15px (tokens.ts), so every composer/Brain-sheet field was tripping it.
+   !important because these all also carry an inline font-size from textStyle('body') (15px) —
+   the style-attribute/stylesheet precedence rule means only an !important stylesheet rule can
+   win over that. Scoped to .lc-root so it can't leak into an app's own unrelated inputs. */
+.lc-root input, .lc-root textarea, .lc-root select { font-size: 16px !important; }
 `
 
 // Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
@@ -811,6 +866,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // streaming text. Null when no tool is mid-flight.
   const [toolActivity, setToolActivity] = useState<LivToolActivity | null>(null)
   const [sending, setSending] = useState(false)
+  // Live run-time counter for the 'Thinking' status (Jeff, live 2026-09-08): elapsed seconds
+  // since the current turn started sending, ticking up for as long as `sending` is true —
+  // model-agnostic, driven purely by LivChat's own generating state (see the animated-glyph
+  // state machine below: idle / thinking / running-a-workflow all key off sending/toolActivity).
+  const [elapsedSec, setElapsedSec] = useState(0)
+  useEffect(() => {
+    if (!sending) { setElapsedSec(0); return }
+    const start = Date.now()
+    const id = setInterval(() => setElapsedSec(Math.round((Date.now() - start) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [sending])
+  // Animated Liv-state glyph (idle / thinking / running-a-workflow) — ties the brand mark's
+  // motion to the same generating signal as the Thinking indicator above. This is purely a CSS
+  // animation applied to the existing CANONICAL glyph (see Glyph.tsx's `animated` prop) — never
+  // a new mark, per the Liv-glyph law.
+  const livGlyphState: 'idle' | 'thinking' | 'running' = toolActivity ? 'running' : sending ? 'thinking' : 'idle'
   const [msg, setMsg] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -946,6 +1017,17 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
   }
   const fileRef = useRef<HTMLInputElement>(null)
+  // No-auto-scroll-to-bottom (Jeff, live 2026-09-08 — "I HATE that about Claude, why would I
+  // want to start reading at the bottom?"): a new Liv reply anchors at its TOP once, instead of
+  // being chased to the bottom on every streamed token. liveTurnRef points at the in-flight
+  // streaming/tool-activity bubble; turnAnchoredRef flips false when a turn starts (in send())
+  // and locks true right after the one-time top-anchor scroll so later tokens don't re-fire it;
+  // suppressNextBottomJamRef tells the ordinary bottom-follow effect below to skip its very next
+  // run — otherwise the server-reload that commits the finished reply into `messages` would jam
+  // the scroll straight back down a moment after we anchored it to the top.
+  const liveTurnRef = useRef<HTMLDivElement>(null)
+  const turnAnchoredRef = useRef(true)
+  const suppressNextBottomJamRef = useRef(false)
 
   // Mirrors activeId synchronously so in-flight async work can tell — the instant
   // it resolves — whether the user is STILL on the session it was fired for.
@@ -1166,10 +1248,28 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     onMessagesChange?.(messages, activeId)
   }, [messages, activeId, onMessagesChange])
 
+  // Anchor a new Liv turn's TOP into view exactly once, the moment it starts producing
+  // something visible (first streamed token or a tool round beginning) — not on every
+  // subsequent token, which is what used to chase the scroll position to the bottom.
+  useEffect(() => {
+    const livTurnStarted = streaming.length > 0 || !!toolActivity
+    if (livTurnStarted && !turnAnchoredRef.current) {
+      turnAnchoredRef.current = true
+      suppressNextBottomJamRef.current = true
+      liveTurnRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [streaming, toolActivity])
+
+  // Ordinary "keep the reader on the newest line" behavior for everything that ISN'T a live Liv
+  // turn completing: the user's own outgoing bubble, opening/switching a session, history
+  // loading. Skips its very next run once a live-turn top-anchor just fired (see above) so the
+  // finished-reply reload doesn't immediately jam the scroll back down to the bottom.
   useEffect(() => {
     const el = transcriptRef.current
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
-  }, [messages, streaming])
+    if (!el) return
+    if (suppressNextBottomJamRef.current) { suppressNextBottomJamRef.current = false; return }
+    if (pinnedRef.current) el.scrollTop = el.scrollHeight
+  }, [messages.length])
 
   // Artifacts panel: persist the divider position across sessions (per browser).
   useEffect(() => {
@@ -1263,6 +1363,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       try { adapter.chat.abort() } catch (e) { console.error('adapter.chat.abort threw', e) }
     }
     setActive(id); setMessages([]); setStreaming(''); setRailOpen(false)
+    // Reset the top-anchor bookkeeping too — otherwise a suppress flag left over from a turn
+    // abandoned mid-stream (by the abort just above) could wrongly skip the bottom-jump that
+    // should land this newly-opened session's history at its latest message.
+    turnAnchoredRef.current = true
+    suppressNextBottomJamRef.current = false
     try {
       const r = await adapter.messages.list(id)
       if (activeIdRef.current !== id) return // superseded by a newer click — discard.
@@ -1317,6 +1422,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     // The user just sent a turn — jump to and follow the newest message even if they'd scrolled
     // up to re-read earlier (the auto-follow effect only scrolls when pinned).
     pinnedRef.current = true
+    turnAnchoredRef.current = false
     setSending(true); setMsg('')
 
     let sessionId = activeId
@@ -1767,7 +1873,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         </div>
         {!hat.hideHeaderTitle && (
           <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
-            {hat.glyph && <Glyph variant={hat.glyph} size={22} />}
+            {hat.glyph && <Glyph variant={hat.glyph} size={22} animated={hat.glyph === 'live' ? livGlyphState : 'none'} />}
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Liv{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
           </h2>
         )}
@@ -1860,7 +1966,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           <div className="lc-transcript" ref={transcriptRef} style={{ ...S.transcript, ...(dock === 'full' ? { maxHeight: 'none' } : null) }} onScroll={onTranscriptScroll}>
             {messages.length === 0 && !streaming && (
               <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: space.sm, padding: `${space.md}px ${space.sm}px`, maxWidth: 460 }}>
-                {hat.glyph && <Glyph variant={hat.glyph} size={hat.hideHeaderTitle ? 120 : 64} />}
+                {hat.glyph && <Glyph variant={hat.glyph} size={hat.hideHeaderTitle ? 120 : 64} animated={hat.glyph === 'live' ? livGlyphState : 'none'} />}
                 <h3 style={{ ...textStyle('h2'), margin: 0 }}>Ask Liv</h3>
                 {(hat.description || hat.emptyText) && (
                   <p style={{ ...S.muted, margin: 0 }}>{hat.description || hat.emptyText}</p>
@@ -1988,10 +2094,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               )
             })}
             {(streaming || toolActivity) && (
-              <div className="lc-bubble" style={bubbleStyle('liv')}>
+              <div ref={liveTurnRef} className="lc-bubble" style={bubbleStyle('liv')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ ...textStyle('overline'), color: cssVar.mid }}>Liv</span>
                   <ModalityPill modality="text" />
+                  {/* 'Thinking' status + live run-time counter (Jeff, live 2026-09-08): a
+                      Claude-style generating indicator, model-agnostic (driven by LivChat's own
+                      `sending` state, never a vendor name). Ticks for the whole turn, not just
+                      before the first token — LivChat has no separate reasoning/output signal to
+                      freeze it at. Shares the idle/thinking/running-workflow state machine with
+                      the animated header glyph (see livGlyphState below). */}
+                  {sending && (
+                    <span className="lc-thinking" style={{ ...textStyle('caption'), color: cssVar.mid, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span className="lc-thinking-label">{toolActivity ? 'Working' : 'Thinking'}</span>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{elapsedSec}s</span>
+                    </span>
+                  )}
                   {/* Stop — only when the adapter exposes an abort port; a click cancels the
                       in-flight reply so a slow answer stops burning tokens. Placed right of the
                       pill in the streaming bubble's own header so it sits with the "in flight"
@@ -2138,7 +2256,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                       popover would stay visually open until the next keystroke or Escape. */}
                   <div onClick={() => { setSlashOpen(false); setSlashDismissed(true) }}
                     style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
-                  <div className="lc-slash-menu" role="listbox" aria-label="Tools" style={{
+                  <div className="lc-slash-menu lc-glass" role="listbox" aria-label="Tools" style={{
                     position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 4, zIndex: 31,
                     maxHeight: 220, overflowY: 'auto',
                     background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.md,
@@ -2183,11 +2301,36 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 }}
                 rows={1} />
             </div>
-            {/* Toolbar row — canonical order per onelyf-planning/docs/liv-chat-canon.md:
-                `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑`. Speaker + mic sit right
-                next to the send button. Brain pill holds model + API key + settings that
-                previously lived in the header. */}
+            {/* Toolbar row order (Jeff, live 2026-09-08 — supersedes the earlier
+                `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑` canon):
+                Brain (far LEFT) | Attach (+) | Tools (actions) | Hands-free | Dictate | Send/Stop.
+                No trailing spacer — the six controls sit as one contiguous left-to-right cluster,
+                Send naturally lands last/rightmost. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              {/* Brain pill: model + API-key + provider settings, all folded together. Gated on
+                  showKey (which respects hat.enableKey === false — a hat that opts out gets no
+                  Brain pill at all). Opens a bottom SHEET (see below, outside this row) — not an
+                  anchored popover — per Jeff's 2026-09-08 "professional, Claude-model-selector-like"
+                  brain-menu direction. */}
+              {showKey && (
+                <div style={{ display: 'inline-flex' }}>
+                  {/* Brain pill: opaque surface backing + accent border, matching Tummyful's
+                      original `.composer-modelpill` canon — was `background: transparent` with
+                      a subtle grey border, which read as a floating word rather than a pill
+                      button (Jeff 2026-08-09: "I want the terra cotta pill backing for the
+                      buttons not just a glow"). Every consumer now gets the pill shape; the
+                      accent color they wear (terracotta / green) still comes from their own
+                      hat.accent, so this stays palette-agnostic. */}
+                  <button type="button" className="lc-iconbtn ds-btn"
+                    style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
+                    title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
+                    aria-expanded={brainOpen} aria-haspopup="dialog" onClick={() => setBrainOpen((o) => !o)}>
+                    {hat.glyph === 'live' && <Glyph variant="live" size={14} animated={livGlyphState} alt="" />}
+                    <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add Key'}</span>
+                    <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+                  </button>
+                </div>
+              )}
               {showAttach && adapter.attachments && (
                 <>
                   <button className="lc-iconbtn" style={S.composerIconbtn} title="Attach a file" aria-label="Attach a file" onClick={() => fileRef.current?.click()}><PlusI /></button>
@@ -2209,38 +2352,24 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   }} />
                 </>
               )}
-              {/* Brain pill: model + API-key + provider settings, all folded together. Gated on
-                  showKey (which respects hat.enableKey === false — a hat that opts out gets no
-                  Brain pill at all). Popover mirrors Tummyful/Cash Stash's Brain menus. */}
-              {showKey && (
-                <div style={{ position: 'relative', display: 'inline-flex' }}>
-                  {/* Brain pill: opaque surface backing + accent border, matching Tummyful's
-                      original `.composer-modelpill` canon — was `background: transparent` with
-                      a subtle grey border, which read as a floating word rather than a pill
-                      button (Jeff 2026-08-09: "I want the terra cotta pill backing for the
-                      buttons not just a glow"). Every consumer now gets the pill shape; the
-                      accent color they wear (terracotta / green) still comes from their own
-                      hat.accent, so this stays palette-agnostic. */}
-                  <button type="button" className="lc-iconbtn ds-btn"
-                    style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
-                    title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
-                    aria-expanded={brainOpen} onClick={() => setBrainOpen((o) => !o)}>
-                    <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add Key'}</span>
-                    <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
-                  </button>
-                  {brainOpen && (
-                    <>
-                      {/* Click-out overlay — same pattern the actions popover below uses. */}
-                      <div onClick={() => setBrainOpen(false)}
-                        style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
-                      <div role="menu" style={{
-                        position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
-                        minWidth: 240, maxWidth: 320, maxHeight: 'calc(100vh - 120px)', zIndex: 31,
-                        background: cssVar.surface, border: `1px solid ${cssVar.border}`,
-                        borderRadius: radius.md, padding: 10, boxShadow: 'var(--ds-shadow-card)',
-                        display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto',
-                      }}>
-                        <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
+              {/* Brain bottom sheet (Jeff, live 2026-09-08 — "not exactly, but something more
+                  professional" than Claude's model-selector sheet). Rendered as a fixed
+                  scrim + rise-from-bottom panel rather than an anchored popover: scrollable,
+                  expandable, Liquid Glass (see .lc-brain-sheet / .lc-glass below). */}
+              {showKey && brainOpen && (
+                <div className="lc-sheet-scrim" onClick={() => setBrainOpen(false)}
+                  style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                  <div role="dialog" aria-modal="true" aria-label="Brain — model, API key, and settings"
+                    onClick={(e) => e.stopPropagation()}
+                    className="lc-glass lc-brain-sheet"
+                    style={{
+                      width: '100%', maxWidth: 480, maxHeight: '80vh', overflowY: 'auto',
+                      borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+                      padding: 16, paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+                      boxShadow: 'var(--ds-shadow-card)', display: 'flex', flexDirection: 'column', gap: 8,
+                    }}>
+                    <div className="lc-sheet-handle" aria-hidden="true" />
+                    <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
                         <p style={{ ...S.muted, margin: 0 }}>
                           Liv replies using <strong>your own API key</strong>.
                           {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
@@ -2412,10 +2541,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                             </div>
                           )
                         })()}
-                        <button className="ds-btn" style={S.primaryBtn} onClick={async () => { await saveKey(); setBrainOpen(false); }}>Save</button>
-                      </div>
-                    </>
-                  )}
+                    <button className="ds-btn" style={S.primaryBtn} onClick={async () => { await saveKey(); setBrainOpen(false); }}>Save</button>
+                  </div>
                 </div>
               )}
               {/* Composer actions menu — Commis's chef's-knife popover ("turn this into…"),
@@ -2440,7 +2567,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                           itself so items still receive their own clicks. */}
                       <div onClick={() => setActionsOpen(false)}
                         style={{ position: 'fixed', inset: 0, zIndex: 30, background: 'transparent' }} />
-                      <div className="lc-actions-menu" role="menu" style={{
+                      <div className="lc-actions-menu lc-glass" role="menu" style={{
                         position: 'absolute', bottom: '100%', left: 0, marginBottom: 6,
                         minWidth: 200, maxWidth: 280, zIndex: 31,
                         background: cssVar.surface, border: `1px solid ${cssVar.border}`,
@@ -2465,13 +2592,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   )}
                 </div>
               )}
-              <div style={{ flex: 1 }} />
               {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
-                  dictation (only where the browser supports speech-in). Right-cluster placement
-                  next to send, per canon. Pressed states use filled backgrounds — Tummyful's
-                  `.composer-icon.on` (hands-free accent fill) + `.composer-icon.listening`
-                  (mic danger fill) — so the active mode is unmistakable at a glance, not
-                  just a color shift on the SVG. */}
+                  dictation (only where the browser supports speech-in). No spacer before this
+                  cluster (Jeff, live 2026-09-08 order revision) — Hands-free/Dictate/Send now sit
+                  directly adjacent to Tools, not pushed to the far right. Pressed states use
+                  filled backgrounds — Tummyful's `.composer-icon.on` (hands-free accent fill) +
+                  `.composer-icon.listening` (mic danger fill) — so the active mode is
+                  unmistakable at a glance, not just a color shift on the SVG. */}
               <button type="button" className="lc-iconbtn"
                 style={{ ...S.composerIconbtn,
                   background: handsFree ? accent : cssVar.surface,
@@ -2595,7 +2722,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         <div onClick={() => setTranscriptOpen(false)}
           style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div role="dialog" aria-label="Transcript" aria-modal="true" onClick={(e) => e.stopPropagation()}
-            style={{ background: cssVar.surface, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, boxShadow: 'var(--ds-shadow-card)', width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: 8, padding: 12, boxSizing: 'border-box' }}>
+            className="lc-glass"
+            style={{ border: `1px solid ${cssVar.border}`, borderRadius: radius.md, boxShadow: 'var(--ds-shadow-card)', width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: 8, padding: 12, boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Transcript</span>
               <button type="button" className="ds-btn" style={{ ...textStyle('caption'), color: cssVar.mid, background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
