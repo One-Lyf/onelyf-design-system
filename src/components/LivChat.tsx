@@ -393,20 +393,24 @@ const SYNTAX_COLOR: Record<SyntaxTokenKind, string> = {
 // Matched by family substring so a dated snapshot id (…-20251001) still resolves;
 // unknown models fall back to the Sonnet tier. Unlike Cash Stash's single flat
 // rate, this prices Haiku/Opus turns correctly — the meter is an estimate, not a bill.
+// A `hint` (LivModel.costPerToken, resolved by the caller from the current model list) wins
+// when present — the escape hatch for a live-discovered non-Anthropic model, which has none of
+// the opus/sonnet/haiku substrings below and would otherwise silently borrow Sonnet's price.
 type Tier = { input: number; output: number }
 const PRICE_PER_TOKEN: Record<string, Tier> = {
   opus: { input: 15 / 1e6, output: 75 / 1e6 },
   sonnet: { input: 3 / 1e6, output: 15 / 1e6 },
   haiku: { input: 1 / 1e6, output: 5 / 1e6 },
 }
-function tierFor(model?: string | null): Tier {
+function tierFor(model?: string | null, hint?: Tier): Tier {
+  if (hint) return hint
   const id = (model || '').toLowerCase()
   if (id.includes('opus')) return PRICE_PER_TOKEN.opus
   if (id.includes('haiku')) return PRICE_PER_TOKEN.haiku
   return PRICE_PER_TOKEN.sonnet
 }
-function usageCost(u: LivUsage, model?: string | null): number {
-  const t = tierFor(model)
+function usageCost(u: LivUsage, model?: string | null, hint?: Tier): number {
+  const t = tierFor(model, hint)
   return (u.input || 0) * t.input
     + (u.output || 0) * t.output
     + (u.cacheCreate || 0) * t.input * 1.25
@@ -865,6 +869,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     () => curateLivModels(liveModels ?? hat.models ?? DEFAULT_MODELS),
     [liveModels, hat.models],
   )
+  // Resolves a model id's host-supplied cost hint (LivModel.costPerToken) for usageCost below —
+  // see the tierFor/usageCost comment for why this matters for non-Anthropic models.
+  const costHintFor = (id?: string | null) => models.find((m) => m.id === id)?.costPerToken
 
   const [sessions, setSessions] = useState<LivSession[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -1940,7 +1947,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           {(() => {
             const totalTok = (usage.input || 0) + (usage.output || 0)
             if (totalTok <= 0) return null
-            const cost = usageCost(usage, keyInfo.model)
+            const cost = usageCost(usage, keyInfo.model, costHintFor(keyInfo.model))
             return (
               <button
                 type="button"
@@ -2596,12 +2603,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                             session — Jeff 2026-08-09: "Brain menu still lacking". Empty rows
                             show a dimmed em-dash instead of hiding. */}
                         {(() => {
+                          const costHint = costHintFor(keyInfo.model)
                           const totalTok = (usage.input || 0) + (usage.output || 0)
-                          const sessionCost = usageCost(usage, keyInfo.model)
+                          const sessionCost = usageCost(usage, keyInfo.model, costHint)
                           const lastTok = lastTurn ? (lastTurn.input || 0) + (lastTurn.output || 0) : 0
-                          const lastCost = lastTurn ? usageCost(lastTurn, keyInfo.model) : 0
+                          const lastCost = lastTurn ? usageCost(lastTurn, keyInfo.model, costHint) : 0
                           const dailyTok = (daily.input || 0) + (daily.output || 0)
-                          const dailyCost = usageCost(daily, keyInfo.model)
+                          const dailyCost = usageCost(daily, keyInfo.model, costHint)
                           const row = { display: 'flex', justifyContent: 'space-between', gap: 8, ...textStyle('caption') } as CSSProperties
                           const val = (cost: number, tok: number) => tok > 0
                             ? { text: `$${cost.toFixed(4)} · ${tok.toLocaleString()} tok`, color: cssVar.ink }

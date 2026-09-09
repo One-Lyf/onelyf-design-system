@@ -13,6 +13,14 @@
 export interface LivModel {
   id: string
   label: string
+  // Optional cost hint (dollars per token, list price) for LivChat's token/cost meter. LivChat's
+  // internal estimator otherwise resolves a tier by matching the id against Anthropic's public
+  // model-family names (opus/sonnet/haiku) — accurate for Claude ids, but a live-discovered
+  // non-Anthropic model (adapter.key.listModels can return any provider's catalogue, e.g. a
+  // GPT/Gemini id) has none of those substrings and would silently fall back to Sonnet's price,
+  // which is wrong, not just imprecise. A host that knows a model's real per-token cost can set
+  // this to get an accurate estimate instead.
+  costPerToken?: { input: number; output: number }
 }
 
 // Suite-wide policy: keep Fable / Mythos class models out of the picker for now
@@ -68,7 +76,9 @@ export function curateLivModels(
     if (seen.has(id)) continue
     seen.add(id)
     const label = (rawLabel || id).replace(/^Claude\s+/i, '').trim()
-    out.push({ id, label })
+    // Only set the key when actually present — an explicit `costPerToken: undefined` would
+    // still differ from a plain `{id, label}` object under deepStrictEqual (distinct own keys).
+    out.push(m.costPerToken ? { id, label, costPerToken: m.costPerToken } : { id, label })
   }
   return out
 }
