@@ -769,7 +769,7 @@ export const livChatStylesheet = `
   .lc-split[data-artifact-open="true"] .lc-artifact-divider { display: none; }
   .lc-split[data-artifact-open="true"] .lc-artifact-panel { border-left: 0; border-top: 1px solid var(--ds-border); }
 }
-/* ── Liquid Glass (Jeff, live 2026-09-08, broadened) ─────────────────────────────────────────
+/* ── Liquid Glass ─────────────────────────────────────────────────────────────────────────
    iOS-26-style translucent frosted material for every popover/sheet/menu that renders ABOVE the
    chat transcript (Brain sheet, actions menu, slash menu, transcript viewer, link-guard modal —
    the app's own side panel + Chat/Builder dropdown apply this same class at the app level).
@@ -816,7 +816,7 @@ export const livChatStylesheet = `
 @media (prefers-reduced-motion: reduce) {
   .lc-thinking-label { animation: none; }
 }
-/* ── iOS auto-zoom fix (Jeff, live 2026-09-08) ────────────────────────────────────────────────
+/* ── iOS auto-zoom fix ────────────────────────────────────────────────────────────────────
    Safari zooms the whole viewport on focusing any input/textarea/select under 16px. LivChat's
    body-text scale is 15px (tokens.ts), so every composer/Brain-sheet field was tripping it.
    !important because these all also carry an inline font-size from textStyle('body') (15px) —
@@ -866,7 +866,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // streaming text. Null when no tool is mid-flight.
   const [toolActivity, setToolActivity] = useState<LivToolActivity | null>(null)
   const [sending, setSending] = useState(false)
-  // Live run-time counter for the 'Thinking' status (Jeff, live 2026-09-08): elapsed seconds
+  // Live run-time counter for the 'Thinking' status: elapsed seconds
   // since the current turn started sending, ticking up for as long as `sending` is true —
   // model-agnostic, driven purely by LivChat's own generating state (see the animated-glyph
   // state machine below: idle / thinking / running-a-workflow all key off sending/toolActivity).
@@ -1017,8 +1017,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
   }
   const fileRef = useRef<HTMLInputElement>(null)
-  // No-auto-scroll-to-bottom (Jeff, live 2026-09-08 — "I HATE that about Claude, why would I
-  // want to start reading at the bottom?"): a new Liv reply anchors at its TOP once, instead of
+  // No-auto-scroll-to-bottom: a new Liv reply anchors at its TOP once, instead of
   // being chased to the bottom on every streamed token. liveTurnRef points at the in-flight
   // streaming/tool-activity bubble; turnAnchoredRef flips false when a turn starts (in send())
   // and locks true right after the one-time top-anchor scroll so later tokens don't re-fire it;
@@ -2098,7 +2097,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ ...textStyle('overline'), color: cssVar.mid }}>Liv</span>
                   <ModalityPill modality="text" />
-                  {/* 'Thinking' status + live run-time counter (Jeff, live 2026-09-08): a
+                  {/* 'Thinking' status + live run-time counter: a
                       Claude-style generating indicator, model-agnostic (driven by LivChat's own
                       `sending` state, never a vendor name). Ticks for the whole turn, not just
                       before the first token — LivChat has no separate reasoning/output signal to
@@ -2301,7 +2300,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 }}
                 rows={1} />
             </div>
-            {/* Toolbar row order (Jeff, live 2026-09-08 — supersedes the earlier
+            {/* Toolbar row order (supersedes the earlier
                 `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑` canon):
                 Brain (far LEFT) | Attach (+) | Tools (actions) | Hands-free | Dictate | Send/Stop.
                 No trailing spacer — the six controls sit as one contiguous left-to-right cluster,
@@ -2310,7 +2309,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               {/* Brain pill: model + API-key + provider settings, all folded together. Gated on
                   showKey (which respects hat.enableKey === false — a hat that opts out gets no
                   Brain pill at all). Opens a bottom SHEET (see below, outside this row) — not an
-                  anchored popover — per Jeff's 2026-09-08 "professional, Claude-model-selector-like"
+                  anchored popover — a professional, Claude-model-selector-like
                   brain-menu direction. */}
               {showKey && (
                 <div style={{ display: 'inline-flex' }}>
@@ -2352,8 +2351,8 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   }} />
                 </>
               )}
-              {/* Brain bottom sheet (Jeff, live 2026-09-08 — "not exactly, but something more
-                  professional" than Claude's model-selector sheet). Rendered as a fixed
+              {/* Brain bottom sheet — a more professional take on Claude's model-selector
+                  sheet, not a literal copy. Rendered as a fixed
                   scrim + rise-from-bottom panel rather than an anchored popover: scrollable,
                   expandable, Liquid Glass (see .lc-brain-sheet / .lc-glass below). */}
               {showKey && brainOpen && (
@@ -2594,7 +2593,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               )}
               {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
                   dictation (only where the browser supports speech-in). No spacer before this
-                  cluster (Jeff, live 2026-09-08 order revision) — Hands-free/Dictate/Send now sit
+                  cluster (order revision) — Hands-free/Dictate/Send now sit
                   directly adjacent to Tools, not pushed to the far right. Pressed states use
                   filled backgrounds — Tummyful's `.composer-icon.on` (hands-free accent fill) +
                   `.composer-icon.listening` (mic danger fill) — so the active mode is

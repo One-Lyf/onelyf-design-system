@@ -30,7 +30,7 @@ const URLS: Record<GlyphVariant, string> = {
   rooted: rootedUrl,
 }
 
-// Liv-state motion (2026-09-08, Jeff live): the SAME canonical mark, animated by CSS to signal
+// Liv-state motion: the SAME canonical mark, animated by CSS to signal
 // what Liv is doing — never a new/alternate glyph (the naming/glyph law forbids inventing an
 // L/dot/spark mark). Optional and defaults to unanimated ('none') so every existing consumer
 // (crest in headers/marketing, live/rooted elsewhere) is byte-for-byte unaffected; a caller opts
