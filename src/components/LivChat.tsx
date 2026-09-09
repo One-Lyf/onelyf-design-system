@@ -458,6 +458,9 @@ const PencilI = () => <svg {...svg}><path d="M12 20h9" /><path d="M16.5 3.5a2.12
 const TrashI = () => <svg {...svg}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
 const CopyI = () => <svg {...svg}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
 const CheckI = () => <svg {...svg}><polyline points="20 6 9 17 4 12" /></svg>
+// Read-aloud controls (accessibility: per-message Play/Stop, top-left of the response frame).
+const PlayI = () => <svg {...svg}><polygon points="6 3 20 12 6 21 6 3" /></svg>
+const StopSmallI = () => <svg {...svg}><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
 const MenuI = () => <svg {...svg}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
 const DownloadI = () => <svg {...svg}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
 const FileTextI = () => <svg {...svg}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
@@ -484,6 +487,15 @@ function ModalityPill({ modality }: { modality?: string }) {
       {voice ? <MicI /> : <KeyboardI />}{voice ? 'Voice' : 'Text'}
     </span>
   )
+}
+
+// Highlight-follow for the per-message read-aloud Play button: wraps the currently-spoken word
+// in <mark>. Plain text only — while a message is playing, its content renders without
+// Linkified's link-tap handling for that render (links resume the instant playback stops); a
+// deliberate trade-off, not a silent regression.
+function HighlightedText({ text, range }: { text: string; range: { start: number; end: number } }) {
+  const { start, end } = range
+  return <>{text.slice(0, start)}<mark className="lc-tts-highlight">{text.slice(start, end)}</mark>{text.slice(end)}</>
 }
 
 // ── Auto-linkify + external-link guard (livchat-external-link-guard) ──────────────────────────
@@ -823,6 +835,8 @@ export const livChatStylesheet = `
    the style-attribute/stylesheet precedence rule means only an !important stylesheet rule can
    win over that. Scoped to .lc-root so it can't leak into an app's own unrelated inputs. */
 .lc-root input, .lc-root textarea, .lc-root select { font-size: 16px !important; }
+/* ── Read-aloud highlight-follow (accessibility) ─────────────────────────────────────────── */
+.lc-tts-highlight { background: color-mix(in srgb, var(--lc-accent) 35%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 `
 
 // Minimal shape of the experimental Web Speech API (not in the standard TS DOM lib) — just the
@@ -884,6 +898,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const livGlyphState: 'idle' | 'thinking' | 'running' = toolActivity ? 'running' : sending ? 'thinking' : 'idle'
   const [msg, setMsg] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // Per-message read-aloud (accessibility): which message is currently being spoken, and the
+  // char range of the word currently highlighted (browser speechSynthesis path only — see
+  // playMessage below).
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -1362,6 +1381,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       try { adapter.chat.abort() } catch (e) { console.error('adapter.chat.abort threw', e) }
     }
     setActive(id); setMessages([]); setStreaming(''); setRailOpen(false)
+    // A message from the just-abandoned session shouldn't keep reading aloud into the newly
+    // opened one.
+    stopPlayingMessage()
     // Reset the top-anchor bookkeeping too — otherwise a suppress flag left over from a turn
     // abandoned mid-stream (by the abort just above) could wrongly skip the bottom-jump that
     // should land this newly-opened session's history at its latest message.
@@ -1563,6 +1585,44 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   function stopSpeaking() {
     adapter.voice?.stop?.()
     if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel()
+  }
+  // Per-message read-aloud (accessibility: Play button + highlight-follow), independent of the
+  // hands-free auto-read-reply flow above. Word highlight-follow only activates on the browser
+  // speechSynthesis fallback path (SpeechSynthesisUtterance's `boundary` event) — a fully custom
+  // adapter.voice implementation has no boundary signal in its interface, so playback still
+  // works there, the message just renders without a moving highlight.
+  function playMessage(id: string, text?: string | null) {
+    if (!text?.trim()) return
+    if (playingId === id) { stopPlayingMessage(); return }
+    stopPlayingMessage()
+    setPlayingId(id)
+    if (adapter.voice?.speak) {
+      adapter.voice.speak(text).catch((e) => console.error('voice.speak failed', e))
+        .finally(() => setPlayingId((cur) => (cur === id ? null : cur)))
+      return
+    }
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined
+    if (!synth) { setPlayingId(null); return }
+    synth.cancel()
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.onboundary = (e) => {
+      if (e.name && e.name !== 'word') return
+      const start = e.charIndex
+      // `charLength` isn't universally supported (present in Firefox, absent in Chrome); fall
+      // back to measuring the next whitespace-delimited run from the boundary index.
+      const wordMatch = /^\S+/.exec(text.slice(start))
+      const end = start + (e.charLength || wordMatch?.[0].length || 1)
+      setHighlightRange({ start, end })
+    }
+    utter.onend = () => setPlayingId((cur) => (cur === id ? null : cur))
+    utter.onerror = () => setPlayingId((cur) => (cur === id ? null : cur))
+    synth.speak(utter)
+  }
+  function stopPlayingMessage() {
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel()
+    adapter.voice?.stop?.()
+    setPlayingId(null)
+    setHighlightRange(null)
   }
   // Browser dictation into the composer. Interim results stream in; final text appends to the draft.
   function toggleMic() {
@@ -2011,14 +2071,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               const optionsLive = !!opts && isLast && !sending
               return (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
+                {/* Read-aloud (accessibility): Play sits top-left of the response frame — the
+                    leftmost control in the header row. Copy moves to a footer row, bottom-right
+                    (see below the content). Liv's own replies only; reading back the user's own
+                    typed message aloud isn't the ask here. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{m.role === 'liv' ? 'Liv' : 'You'}</span>
-                  <ModalityPill modality={m.modality} />
-                  {m.content && (
-                    <button className="lc-copy lc-iconbtn" style={{ ...S.iconbtn, marginLeft: 'auto' }} title="Copy message" onClick={() => copyMessage(m.id, m.content)}>
-                      {copiedId === m.id ? (<><CheckI /> <span style={textStyle('caption')}>Copied</span></>) : <CopyI />}
+                  {m.role === 'liv' && m.content && (
+                    <button className="lc-iconbtn" style={S.iconbtn}
+                      title={playingId === m.id ? 'Stop reading aloud' : 'Read this message aloud'}
+                      aria-label={playingId === m.id ? 'Stop reading aloud' : 'Read this message aloud'}
+                      aria-pressed={playingId === m.id}
+                      onClick={() => playMessage(m.id, m.content)}>
+                      {playingId === m.id ? <StopSmallI /> : <PlayI />}
                     </button>
                   )}
+                  <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{m.role === 'liv' ? 'Liv' : 'You'}</span>
+                  <ModalityPill modality={m.modality} />
                 </div>
                 {attachmentsOf(m).length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: m.content ? 6 : 0 }}>
@@ -2087,7 +2155,20 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                     </button>
                   </>
                 ) : (
-                  m.content && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><Linkified text={m.content} onLinkTap={handleLinkTap} /></div>
+                  m.content && (
+                    <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                      {playingId === m.id && highlightRange
+                        ? <HighlightedText text={m.content} range={highlightRange} />
+                        : <Linkified text={m.content} onLinkTap={handleLinkTap} />}
+                    </div>
+                  )
+                )}
+                {m.content && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                    <button className="lc-copy lc-iconbtn" style={S.iconbtn} title="Copy message" onClick={() => copyMessage(m.id, m.content)}>
+                      {copiedId === m.id ? (<><CheckI /> <span style={textStyle('caption')}>Copied</span></>) : <CopyI />}
+                    </button>
+                  </div>
                 )}
               </div>
               )
