@@ -75,6 +75,11 @@ export {
   // stack below the reply, and the composer's manual actions menu items.
   type LivProposedAction, type LivActionQueue, type LivChatAction,
 } from './components/LivChat'
+// Artifact extraction (livchat-artifacts-system): LivChat detects/renders these inline as a
+// side panel already; exporting the extraction fn + type lets a consuming app (e.g. a Console
+// "Artifacts" nav tab) build its own view over the same fenced-block data without re-deriving
+// the parsing rules.
+export { extractArtifact, artifactFilename, type LivArtifact } from './components/livChatComposer'
 // Model-picker policy: the shared curation fn + fallback list, so an app wiring
 // adapter.key.listModels can reuse the exact same rules (drop Fable/Mythos, relabel, dedupe).
 export {
