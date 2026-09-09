@@ -30,20 +30,32 @@ const URLS: Record<GlyphVariant, string> = {
   rooted: rootedUrl,
 }
 
+// Liv-state motion: the SAME canonical mark, animated by CSS to signal
+// what Liv is doing — never a new/alternate glyph (the naming/glyph law forbids inventing an
+// L/dot/spark mark). Optional and defaults to unanimated ('none') so every existing consumer
+// (crest in headers/marketing, live/rooted elsewhere) is byte-for-byte unaffected; a caller opts
+// in only where it actually has a live generating-state signal to drive it (LivChat's Brain
+// pill/header). Keyframes live in livChatStylesheet (see .lc-glyph-*) since that's the one
+// stylesheet every Liv-chat consumer already injects; Glyph itself stays framework-agnostic.
+export type GlyphAnimationState = 'none' | 'idle' | 'thinking' | 'running'
+
 export interface GlyphProps {
   variant?: GlyphVariant
   /** Rendered width in px; height scales to keep aspect ratio. */
   size?: number
   /** Accessible label. Defaults to a sensible per-variant string. */
   alt?: string
+  /** Liv-state motion — see GlyphAnimationState above. Default 'none' (static, unchanged). */
+  animated?: GlyphAnimationState
 }
 
-export default function Glyph({ variant = 'crest', size = 96, alt }: GlyphProps) {
+export default function Glyph({ variant = 'crest', size = 96, alt, animated = 'none' }: GlyphProps) {
   const src = URLS[variant] ?? URLS.crest
   return (
     <img
       src={src}
       alt={alt ?? `OneLyf ${variant === 'live' ? 'Liv' : variant === 'rooted' ? 'Rooted Connection' : 'mark'}`}
+      className={animated !== 'none' ? `lc-glyph-${animated}` : undefined}
       style={{ display: 'block', width: size, height: 'auto', objectFit: 'contain' }}
     />
   )
