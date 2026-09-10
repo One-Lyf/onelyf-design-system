@@ -2460,7 +2460,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   </button>
                 </div>
               )}
-              {showAttach && adapter.attachments && (
+              {/* Gated on hat.enableAttachments alone, NOT adapter.attachments — that field is a
+                  signedUrl RESOLVER for redisplaying a past attachment already in storage (see
+                  its use below in the history-hydration effect), an unrelated capability from
+                  "can this turn carry a file." chat.send(args: {files?: File[]}) accepts files on
+                  every adapter per the interface, so an adapter with no storage-backed redisplay
+                  (attachments ride into the model call inline, never persisted — e.g. Commis)
+                  could still never show this button before this fix, even though sending files
+                  worked fine end to end. */}
+              {showAttach && (
                 <>
                   <button className="lc-iconbtn" style={S.composerIconbtn} title="Attach a file" aria-label="Attach a file" onClick={() => fileRef.current?.click()}><PlusI /></button>
                   <input ref={fileRef} type="file" accept={ATTACH_ACCEPT} multiple style={{ display: 'none' }} onChange={(e) => {
