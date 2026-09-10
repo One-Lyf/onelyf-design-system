@@ -436,7 +436,14 @@ function attachmentsOf(m: LivMessage): LivAttachment[] {
 // lands (it arrives on the next session-list refresh), the rail shows this
 // neutral placeholder rather than a truncated copy of what was just typed.
 function displayTitle(title?: string | null): string {
-  return (title || '').trim() || 'New chat'
+  return (title || '').trim() || 'New Chat'
+}
+
+// No solitary word in a button/header/title ships de-capitalized — short chip/pill
+// labels count, even though they aren't full sentences. Applied at the DS component
+// so no consumer hat config can regress it.
+function titleCase(s: string): string {
+  return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1))
 }
 
 // ── Minimal inline icon set (stroke glyphs, inherit currentColor) ────────────
@@ -2076,7 +2083,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 {hat.pills && hat.pills.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginTop: 2 }}>
                     {hat.pills.map((p, i) => (
-                      <span key={i} style={{ ...textStyle('caption'), border: `1px solid ${accent}`, color: accent, borderRadius: radius.pill, padding: '3px 10px' }}>{p}</span>
+                      <span key={i} style={{ ...textStyle('caption'), border: `1px solid ${accent}`, color: accent, borderRadius: radius.pill, padding: '3px 10px' }}>{titleCase(p)}</span>
                     ))}
                   </div>
                 )}
