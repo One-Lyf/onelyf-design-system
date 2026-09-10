@@ -77,6 +77,21 @@ test('a custom exclude overrides the default (e.g. also hide haiku)', () => {
   ])
 })
 
+test('curate preserves a host-supplied costPerToken hint (ds-livchat-cost-estimator-tier-mismatch)', () => {
+  // A live-discovered non-Anthropic model has no opus/sonnet/haiku substring for LivChat's
+  // internal cost estimator to match — the host can attach a real per-token cost instead of
+  // letting the estimate silently default to Sonnet's price.
+  const raw = [{ id: 'gpt-5', label: 'GPT-5', costPerToken: { input: 10 / 1e6, output: 30 / 1e6 } }]
+  assert.deepEqual(curateLivModels(raw), raw)
+})
+
+test('curate does not fabricate a costPerToken key when the input has none', () => {
+  // Regression guard: an explicit `costPerToken: undefined` key would break every deepEqual
+  // assertion above (own-key presence differs even when the value is undefined).
+  const [out] = curateLivModels([{ id: 'claude-opus-4-6', label: 'Opus 4.6' }])
+  assert.ok(!('costPerToken' in out))
+})
+
 test('the static fallback is self-consistent: no Fable/Mythos, default present & first', () => {
   // curating the fallback is idempotent (no Fable/Mythos slip through)
   assert.deepEqual(curateLivModels(DEFAULT_MODELS), DEFAULT_MODELS)
