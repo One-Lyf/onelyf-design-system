@@ -807,9 +807,14 @@ export const livChatStylesheet = `
 .lc-sheet-scrim { animation: lc-fade-in .16s ease; }
 .lc-brain-sheet { animation: lc-sheet-up .22s cubic-bezier(0.2, 0.8, 0.2, 1); }
 @keyframes lc-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+/* The visible bar stays 36x4 (canon size); the element's own box is padded taller so the
+   drag/tap target is comfortably touchable without changing how the handle looks. */
 .lc-sheet-handle {
-  width: 36px; height: 4px; border-radius: 2px; background: var(--ds-border-bright);
-  margin: 0 auto 4px; flex: 0 0 auto;
+  width: 100%; height: 20px; margin: 0 0 -8px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+}
+.lc-sheet-handle::before {
+  content: ''; width: 36px; height: 4px; border-radius: 2px; background: var(--ds-border-bright);
 }
 @media (prefers-reduced-motion: reduce) {
   .lc-sheet-scrim, .lc-brain-sheet { animation: none; }
@@ -997,6 +1002,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // pill (model + API key + usage) lives IN the composer next to attach/mic/send, NOT in
   // the chat header — see onelyf-planning/docs/liv-chat-canon.md (Tummyful is the reference design).
   const [brainOpen, setBrainOpen] = useState(false)
+  // Brain sheet drag-to-dismiss: live vertical offset while the handle is being dragged
+  // (0 = resting position). Swiping the handle down past DISMISS_THRESHOLD_PX closes the
+  // sheet; releasing short of that snaps it back to 0.
+  const [sheetDragY, setSheetDragY] = useState(0)
+  const sheetDraggingRef = useRef(false)
   // Transcript viewer: view the open session in a chosen format (Markdown / Plain / JSON) with
   // copy + download. Opened from the header transcript button.
   const [transcriptOpen, setTranscriptOpen] = useState(false)
@@ -1844,6 +1854,29 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     window.addEventListener('pointerup', up)
   }
 
+  const SHEET_DISMISS_THRESHOLD_PX = 80
+
+  function onBrainSheetHandlePointerDown(e: ReactPointerEvent) {
+    e.preventDefault()
+    sheetDraggingRef.current = true
+    const startY = e.clientY
+    const move = (ev: PointerEvent) => {
+      if (!sheetDraggingRef.current) return
+      setSheetDragY(Math.max(0, ev.clientY - startY))
+    }
+    const up = () => {
+      sheetDraggingRef.current = false
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      setSheetDragY((y) => {
+        if (y > SHEET_DISMISS_THRESHOLD_PX) setBrainOpen(false)
+        return 0
+      })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
   async function saveKey() {
     if (!adapter.key) return
     const patch: { apiKey?: string; model?: string } = {}
@@ -1888,7 +1921,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     main: { display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, height: '100%' } as CSSProperties,
     // flex-basis auto + min-height 0: sizes to content when inline (capped at 460), but shrinks and
     // scrolls when the column is height-constrained (dock / keyboard) so the composer stays visible.
-    transcript: { flex: '1 1 auto', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: space.sm, padding: space.xs, minHeight: 0, maxHeight: 460 } as CSSProperties,
+    // Negative left/right margin cancels the root card's own padding so the transcript alone bleeds
+    // to the card's edge (clipped clean by the card's overflow:hidden + border-radius) while header
+    // and composer keep their normal inset — reads full width instead of boxed inside the card frame.
+    transcript: { flex: '1 1 auto', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: space.sm, padding: space.xs, marginLeft: -space.md, marginRight: -space.md, minHeight: 0, maxHeight: 460 } as CSSProperties,
     input: { ...textStyle('body'), width: '100%', boxSizing: 'border-box', color: cssVar.ink, background: cssVar.bg, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '9px 12px' } as CSSProperties,
     primaryBtn: { ...textStyle('label'), background: accent, color: cssVar.onPrimary, border: 0, borderRadius: radius.md, padding: '9px 14px', cursor: 'pointer' } as CSSProperties,
     ghostBtn: { ...textStyle('label'), background: 'transparent', color: cssVar.ink, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '7px 10px', cursor: 'pointer' } as CSSProperties,
@@ -2388,11 +2424,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 }}
                 rows={1} />
             </div>
-            {/* Toolbar row order (supersedes the earlier
-                `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙 | ↑` canon):
-                Brain (far LEFT) | Attach (+) | Tools (actions) | Hands-free | Dictate | Send/Stop.
-                No trailing spacer — the six controls sit as one contiguous left-to-right cluster,
-                Send naturally lands last/rightmost. */}
+            {/* Toolbar row order: Brain (far LEFT) | Attach (+) | Tools (actions) | [spacer] |
+                Hands-free | Dictate | Send/Stop. The spacer (marginLeft: auto on the Hands-free
+                button below) balances the row left/right — a brief no-spacer revision read
+                left-clustered/unbalanced on a real phone. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
               {/* Brain pill: model + API-key + provider settings, all folded together. Gated on
                   showKey (which respects hat.enableKey === false — a hat that opts out gets no
@@ -2450,12 +2485,16 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                     onClick={(e) => e.stopPropagation()}
                     className="lc-glass lc-brain-sheet"
                     style={{
-                      width: '100%', maxWidth: 480, maxHeight: '80vh', overflowY: 'auto',
+                      width: '100%', maxWidth: 480, maxHeight: '80vh', overflowY: 'auto', overscrollBehavior: 'contain',
                       borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
                       padding: 16, paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
                       boxShadow: 'var(--ds-shadow-card)', display: 'flex', flexDirection: 'column', gap: 8,
+                      transform: sheetDragY ? `translateY(${sheetDragY}px)` : undefined,
                     }}>
-                    <div className="lc-sheet-handle" aria-hidden="true" />
+                    {/* Drag-to-dismiss: swipe the handle down past SHEET_DISMISS_THRESHOLD_PX to close. */}
+                    <div className="lc-sheet-handle" aria-hidden="true"
+                      onPointerDown={onBrainSheetHandlePointerDown}
+                      style={{ cursor: 'grab', touchAction: 'none' }} />
                     <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
                         <p style={{ ...S.muted, margin: 0 }}>
                           Liv replies using <strong>your own API key</strong>.
@@ -2681,14 +2720,17 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 </div>
               )}
               {/* Voice: hands-free read-aloud (always available via browser TTS fallback) + mic
-                  dictation (only where the browser supports speech-in). No spacer before this
-                  cluster (order revision) — Hands-free/Dictate/Send now sit
-                  directly adjacent to Tools, not pushed to the far right. Pressed states use
+                  dictation (only where the browser supports speech-in). marginLeft: auto pushes
+                  this Hands-free/Dictate/Send cluster to the row's far right — restores the
+                  left/right balance of the original `+ | Brain ▾ | actions ▾ | (spacer) | 🔊 | 🎙
+                  | ↑` canon (a brief no-spacer revision read left-clustered/unbalanced on a real
+                  phone). Pressed states use
                   filled backgrounds — Tummyful's `.composer-icon.on` (hands-free accent fill) +
                   `.composer-icon.listening` (mic danger fill) — so the active mode is
                   unmistakable at a glance, not just a color shift on the SVG. */}
               <button type="button" className="lc-iconbtn"
                 style={{ ...S.composerIconbtn,
+                  marginLeft: 'auto',
                   background: handsFree ? accent : cssVar.surface,
                   borderColor: handsFree ? accent : cssVar.borderBright,
                   color: handsFree ? cssVar.onPrimary : cssVar.ink }}
