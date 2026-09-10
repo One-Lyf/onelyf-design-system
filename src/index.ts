@@ -87,7 +87,7 @@ export { extractArtifact, artifactFilename, type LivArtifact } from './component
 // Model-picker policy: the shared curation fn + fallback list, so an app wiring
 // adapter.key.listModels can reuse the exact same rules (drop Fable/Mythos, relabel, dedupe).
 export {
-  curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID, DEFAULT_MODEL_EXCLUDE,
+  curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID, DEFAULT_MODEL_EXCLUDE,
   type CurateOptions,
 } from './components/livChatModels'
 // Effort + autonomy-mode definitions, so an app's adapter maps effort → its provider param and
