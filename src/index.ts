@@ -74,6 +74,10 @@ export {
   // App-action injection primitives (#38): proposed structured mutations rendered as a card
   // stack below the reply, and the composer's manual actions menu items.
   type LivProposedAction, type LivActionQueue, type LivChatAction,
+  // `/`-menu registry (livchat-slash-menu-canon, #80) — an app registers its tool set via
+  // LivChatProps.slashTools; was missing from this barrel, so a consuming app couldn't
+  // `import { type LivSlashTool }` without a deep import or NonNullable<...> workaround.
+  type LivSlashTool, type LivSlashToolArg,
 } from './components/LivChat'
 // Artifact extraction (livchat-artifacts-system): LivChat detects/renders these inline as a
 // side panel already; exporting the extraction fn + type lets a consuming app (e.g. a Console
