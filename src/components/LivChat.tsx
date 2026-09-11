@@ -1064,12 +1064,21 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // being chased to the bottom on every streamed token. liveTurnRef points at the in-flight
   // streaming/tool-activity bubble; turnAnchoredRef flips false when a turn starts (in send())
   // and locks true right after the one-time top-anchor scroll so later tokens don't re-fire it;
-  // suppressNextBottomJamRef tells the ordinary bottom-follow effect below to skip its very next
-  // run — otherwise the server-reload that commits the finished reply into `messages` would jam
-  // the scroll straight back down a moment after we anchored it to the top.
+  // suppressBottomJamAtLenRef tells the ordinary bottom-follow effect below to skip the run that
+  // corresponds to THIS messages.length — otherwise the server-reload that commits the finished
+  // reply into `messages` would jam the scroll straight back down a moment after we anchored it
+  // to the top. It holds a messages.length snapshot rather than a plain boolean because a
+  // sufficiently fast first token (no network round-trip before it) lands in the SAME React
+  // commit as the optimistic user-message append: both effects then fire back-to-back in that
+  // one commit, and a plain "consume on next run" flag gets eaten right there by the bottom-
+  // follow effect reacting to the user's own message, before the real (later, separate-commit)
+  // reply-finished change it was meant for ever arrives. Comparing against the recorded length
+  // lets the bottom-follow effect recognize "this run is for the same length that was already
+  // current when we armed it" and defer instead of consuming — it only actually consumes the
+  // arm on a run where messages.length has since moved to something new.
   const liveTurnRef = useRef<HTMLDivElement>(null)
   const turnAnchoredRef = useRef(true)
-  const suppressNextBottomJamRef = useRef(false)
+  const suppressBottomJamAtLenRef = useRef<number | null>(null)
 
   // Mirrors activeId synchronously so in-flight async work can tell — the instant
   // it resolves — whether the user is STILL on the session it was fired for.
@@ -1297,19 +1306,30 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     const livTurnStarted = streaming.length > 0 || !!toolActivity
     if (livTurnStarted && !turnAnchoredRef.current) {
       turnAnchoredRef.current = true
-      suppressNextBottomJamRef.current = true
+      // Record the length current AS OF THIS COMMIT, not just "true" — see the ref's
+      // declaration comment for why a plain boolean loses this race on a fast first token.
+      suppressBottomJamAtLenRef.current = messages.length
       liveTurnRef.current?.scrollIntoView({ block: 'start' })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately NOT keyed on
+    // messages.length: this must fire only on a streaming/toolActivity change (the "turn
+    // started" signal), reading whatever messages.length is current at that moment. Adding it
+    // as a dependency would re-run this effect on every message-count change too, which is
+    // exactly the coincidental-commit scenario the length-snapshot fix above exists to survive.
   }, [streaming, toolActivity])
 
   // Ordinary "keep the reader on the newest line" behavior for everything that ISN'T a live Liv
   // turn completing: the user's own outgoing bubble, opening/switching a session, history
-  // loading. Skips its very next run once a live-turn top-anchor just fired (see above) so the
-  // finished-reply reload doesn't immediately jam the scroll back down to the bottom.
+  // loading. Defers (without consuming the arm) on a run whose messages.length still matches
+  // what was current when the top-anchor effect armed it above — that run is the optimistic
+  // user-message echo landing in the SAME commit as the anchor, not the later reply-finished
+  // change the arm exists to suppress. Only a run where the length has since moved on actually
+  // consumes it and skips the jam.
   useEffect(() => {
     const el = transcriptRef.current
     if (!el) return
-    if (suppressNextBottomJamRef.current) { suppressNextBottomJamRef.current = false; return }
+    if (suppressBottomJamAtLenRef.current === messages.length) return
+    if (suppressBottomJamAtLenRef.current !== null) { suppressBottomJamAtLenRef.current = null; return }
     if (pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages.length])
 
@@ -1412,7 +1432,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     // abandoned mid-stream (by the abort just above) could wrongly skip the bottom-jump that
     // should land this newly-opened session's history at its latest message.
     turnAnchoredRef.current = true
-    suppressNextBottomJamRef.current = false
+    suppressBottomJamAtLenRef.current = null
     try {
       const r = await adapter.messages.list(id)
       if (activeIdRef.current !== id) return // superseded by a newer click — discard.
