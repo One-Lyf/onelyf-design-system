@@ -161,6 +161,63 @@ export function createStreamingDemoAdapter(backend: InMemoryLivBackend): LivChat
   }
 }
 
+// Deliberately long, multi-paragraph canned reply — the harness for the
+// `liv-console-visual-overhaul` gate's item 8 (no-auto-scroll-to-bottom): a reply this long
+// overflows the 640px demo panel several times over, so LivChat's top-anchor behavior
+// (LivChat.tsx's `scrollIntoView({ block: 'start' })` on the live turn) is actually
+// exercised instead of asserted from source alone. Every other demo reply in this file is a
+// one-liner, which is why nobody could previously observe this behavior without app-level
+// login.
+function longReplyParagraphs(userText: string): string[] {
+  return [
+    `Here's a long answer to "${userText}" so you can watch where the transcript scrolls to when it lands.`,
+    'Paragraph one: this reply is intentionally long enough to overflow the chat panel several times over on a typical mobile viewport, the same way a genuinely detailed Liv answer would.',
+    'Paragraph two: when a reply this long finishes streaming in, the transcript should anchor at the TOP of this new turn, not jump to the bottom the way most chat UIs do by default.',
+    'Paragraph three: that is a deliberate, non-default choice — the reasoning is that a reader wants to start at the beginning of a long answer, not the last line of it, and should be free to scroll down at their own pace instead of being dropped at the end.',
+    'Paragraph four: if the panel is instead pinned to the bottom of this message once streaming completes, that is the regression this demo panel exists to catch.',
+    'Paragraph five: this is the last paragraph, included so there is a clear, unambiguous bottom edge to compare the anchor position against.',
+  ]
+}
+
+// Non-streaming version (whole reply in one onChunk call, like the Commis/Advisor demo
+// adapters above) — kept for parity with the rest of this file, but NOT representative of a
+// real backend for anchor-behavior testing: see createLongReplyStreamingDemoAdapter below,
+// which is the one that actually exercises the gate realistically.
+export function longReplyFor(userText: string): DemoReply {
+  return { text: longReplyParagraphs(userText).join('\n\n') }
+}
+
+// Word-by-word streaming version of the long reply, same delivery shape as
+// createStreamingDemoAdapter above (real backends stream incrementally; a single big onChunk
+// call turned out NOT to give LivChat's top-anchor effect a render tick to fire before the
+// ordinary bottom-follow effect wins — caught by driving longReplyFor through the plain
+// createDemoAdapter first and watching it land at the BOTTOM, not the top, of the reply. This
+// streaming version is the representative one for the gate.
+export function createLongReplyStreamingDemoAdapter(backend: InMemoryLivBackend): LivChatAdapter {
+  return {
+    sessions: backend.sessions,
+    messages: backend.messages,
+    chat: {
+      async send({ sessionId, text }, onChunk): Promise<LivChatSendResult> {
+        backend.appendMessage(sessionId, { id: backend.nextMessageId(), role: 'user', content: text })
+        const words = longReplyParagraphs(text).join('\n\n').split(' ')
+        let acc = ''
+        let first = true
+        for (const w of words) {
+          const delta = first ? w : ' ' + w
+          first = false
+          acc += delta
+          onChunk(delta)
+          await delay(15)
+        }
+        backend.appendMessage(sessionId, { id: backend.nextMessageId(), role: 'liv', content: acc })
+        return { ok: true, usage: { input: 40, output: words.length } }
+      },
+      abort() {},
+    },
+  }
+}
+
 export interface InMemoryLivBackend {
   sessions: LivChatAdapter['sessions']
   messages: LivChatAdapter['messages']
