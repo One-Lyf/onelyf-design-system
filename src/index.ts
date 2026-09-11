@@ -48,7 +48,7 @@ export {
 } from './theme'
 
 // Brand mark
-export { default as Glyph, type GlyphProps, type GlyphVariant } from './Glyph'
+export { default as Glyph, GLYPH_URLS, type GlyphProps, type GlyphVariant } from './Glyph'
 export { default as LivThinking, type LivThinkingProps } from './LivThinking'
 
 // Components
