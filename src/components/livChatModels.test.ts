@@ -4,8 +4,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   curateLivModels,
-  DEFAULT_MODELS,
-  DEFAULT_MODEL_ID,
+  ANTHROPIC_FALLBACK_MODELS,
+  ANTHROPIC_FALLBACK_MODEL_ID,
   DEFAULT_MODEL_EXCLUDE,
 } from './livChatModels.ts'
 
@@ -94,8 +94,8 @@ test('curate does not fabricate a costPerToken key when the input has none', () 
 
 test('the static fallback is self-consistent: no Fable/Mythos, default present & first', () => {
   // curating the fallback is idempotent (no Fable/Mythos slip through)
-  assert.deepEqual(curateLivModels(DEFAULT_MODELS), DEFAULT_MODELS)
-  assert.ok(!DEFAULT_MODELS.some((m) => DEFAULT_MODEL_EXCLUDE.test(m.id)))
-  assert.equal(DEFAULT_MODELS[0].id, DEFAULT_MODEL_ID) // seeded default is first
-  assert.ok(DEFAULT_MODELS.some((m) => m.id === DEFAULT_MODEL_ID))
+  assert.deepEqual(curateLivModels(ANTHROPIC_FALLBACK_MODELS), ANTHROPIC_FALLBACK_MODELS)
+  assert.ok(!ANTHROPIC_FALLBACK_MODELS.some((m) => DEFAULT_MODEL_EXCLUDE.test(m.id)))
+  assert.equal(ANTHROPIC_FALLBACK_MODELS[0].id, ANTHROPIC_FALLBACK_MODEL_ID) // seeded default is first
+  assert.ok(ANTHROPIC_FALLBACK_MODELS.some((m) => m.id === ANTHROPIC_FALLBACK_MODEL_ID))
 })

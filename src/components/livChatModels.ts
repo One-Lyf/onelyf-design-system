@@ -28,18 +28,25 @@ export interface LivModel {
 // "claude-fable-5-1" or a display name like "Fable 5.1".
 export const DEFAULT_MODEL_EXCLUDE = /fable|mythos/i
 
-// Seeded default when nothing is persisted and the list has no entry to fall back
-// on. Jeff's standing preference is Opus 4.6; once the user picks a model it
-// persists per-device (adapter.key) and this no longer applies.
-export const DEFAULT_MODEL_ID = 'claude-opus-4-6'
+// NOT a suite-wide default — Anthropic-specific, used only as the last resort when a host
+// wires neither `hat.models` nor `adapter.key.listModels` (live discovery for whatever
+// provider the user's actual key targets). The picker names REAL provider models and is a
+// selector, not branding (Jeff, 2026-09-02) — a static catalog can only ever list ONE
+// provider's real ids without fabricating another vendor's, so Anthropic's own ids are the
+// only ones this DS can respond for by default without a host wiring its own discovery.
+// Constraint (a) — no single provider hardcoded as THE default — is enforced by NOT
+// presenting any one of these as "preferred"/primary in its label (see below); it is a
+// fallback of last resort, not a suite-wide bias. Any host targeting a different provider
+// MUST wire live discovery to get an unbiased picker.
+export const ANTHROPIC_FALLBACK_MODEL_ID = 'claude-opus-4-6'
 
-// Offline / no-backend fallback — used only when a host neither passes
-// `hat.models` nor wires `adapter.key.listModels` (or that call fails). Real ids
-// by name, seeded default first, Fable/Mythos omitted. Deliberately NOT an
-// exhaustive catalog: the whole point of live discovery is that newer models
-// (e.g. Opus 5) show up without anyone editing this array.
-export const DEFAULT_MODELS: LivModel[] = [
-  { id: 'claude-opus-4-6', label: 'Opus 4.6 · preferred default' },
+// Deliberately NOT an exhaustive catalog: the whole point of live discovery is that newer
+// models (e.g. Opus 5) show up without anyone editing this array. No entry is labeled
+// "default"/"preferred" — that framing is exactly what constraint (a) forbids; the array
+// order still puts a reasonable general-purpose model first only so an EMPTY `hat.models`
+// with no live discovery doesn't land on the cheapest/fastest tier by accident.
+export const ANTHROPIC_FALLBACK_MODELS: LivModel[] = [
+  { id: 'claude-opus-4-6', label: 'Opus 4.6' },
   { id: 'claude-opus-4-8', label: 'Opus 4.8 · most capable' },
   { id: 'claude-opus-4-7', label: 'Opus 4.7 · highly capable' },
   { id: 'claude-sonnet-5', label: 'Sonnet 5 · balanced' },

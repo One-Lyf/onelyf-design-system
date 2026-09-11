@@ -18,7 +18,7 @@ import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
 import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument, type LivArtifact } from './livChatComposer'
 import { highlightCode, type SyntaxTokenKind } from './livChatSyntaxHighlight'
-import { curateLivModels, DEFAULT_MODELS, DEFAULT_MODEL_ID } from './livChatModels'
+import { curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
 import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode, VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity, DEFAULT_COMPACT_THRESHOLD } from './livChatModes'
 import type { LivEffort, LivMode, LivVerbosity } from './livChatModes'
@@ -384,7 +384,7 @@ const SYNTAX_COLOR: Record<SyntaxTokenKind, string> = {
 }
 
 // The model picker's fallback list + curation policy live in ./livChatModels
-// (DEFAULT_MODELS / DEFAULT_MODEL_ID / curateLivModels), imported above. Live discovery
+// (ANTHROPIC_FALLBACK_MODELS / ANTHROPIC_FALLBACK_MODEL_ID / curateLivModels), imported above. Live discovery
 // via adapter.key.listModels() replaces this list when a host wires it.
 
 // Approximate Anthropic list prices, dollars PER TOKEN (list $/1M ÷ 1e6), keyed
@@ -878,7 +878,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // source wins, so the policy holds no matter which path an app is on yet.
   const [liveModels, setLiveModels] = useState<LivModel[] | null>(null)
   const models = useMemo(
-    () => curateLivModels(liveModels ?? hat.models ?? DEFAULT_MODELS),
+    () => curateLivModels(liveModels ?? hat.models ?? ANTHROPIC_FALLBACK_MODELS),
     [liveModels, hat.models],
   )
   // Resolves a model id's host-supplied cost hint (LivModel.costPerToken) for usageCost below —
@@ -1034,7 +1034,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const splitRef = useRef<HTMLDivElement>(null)
   const splitDraggingRef = useRef(false)
   const [keyInput, setKeyInput] = useState('')
-  const [modelInput, setModelInput] = useState(models[0]?.id ?? DEFAULT_MODEL_ID)
+  const [modelInput, setModelInput] = useState(models[0]?.id ?? ANTHROPIC_FALLBACK_MODEL_ID)
   // Opt-in Brain-menu controls. Local mirror of the persisted value (loaded via key.get); a
   // change writes through key.set immediately, like the model picker.
   const showEffort = hat.enableEffort === true && !!adapter.key
