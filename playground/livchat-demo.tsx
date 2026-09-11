@@ -22,7 +22,7 @@ import {
 import { cssVar } from '../src/theme'
 import {
   advisorReplyFor, commisReplyFor, createDemoAdapter, createInMemoryLivBackend,
-  createStreamingDemoAdapter,
+  createStreamingDemoAdapter, createLongReplyStreamingDemoAdapter,
   type DemoProposedAction,
 } from './livchatDemoAdapters'
 
@@ -125,6 +125,11 @@ function LivChatDemo() {
   // proves LivChat's own partial-commit (livchat-interrupt-turn gate).
   const streamBackend = useMemo(() => createInMemoryLivBackend(), [])
   const streamAdapter = useMemo(() => createStreamingDemoAdapter(streamBackend), [streamBackend])
+  // Scroll-anchor harness: a canned reply long enough to overflow the panel, streamed
+  // word-by-word like a real backend, proving the `liv-console-visual-overhaul` gate item 8
+  // (no-auto-scroll-to-bottom) behaviorally instead of just at the source level.
+  const longReplyBackend = useMemo(() => createInMemoryLivBackend(), [])
+  const longReplyAdapter = useMemo(() => createLongReplyStreamingDemoAdapter(longReplyBackend), [longReplyBackend])
 
   const commisHat: LivHat = {
     name: 'Commis',
@@ -166,6 +171,15 @@ function LivChatDemo() {
     placeholder: 'Use the header maximize button to go full-screen…',
     emptyText: 'Tap the maximize icon in the header — this card fills the whole viewport.',
     description: 'Full-screen (maximize) dock harness — toggle it with the header maximize/restore button.',
+  }
+
+  const longReplyHat: LivHat = {
+    name: 'Liv',
+    subtitle: 'scroll-anchor demo',
+    accent: '#3f9e6a',
+    placeholder: 'Send anything — the reply is long enough to overflow the panel…',
+    emptyText: 'Send anything — the canned reply is several screens long.',
+    description: 'Scroll-anchor harness for the no-auto-scroll-to-bottom gate: the reply should land with its TOP in view, not its bottom.',
   }
 
   const advisorActions: LivChatAction[] = [
@@ -215,6 +229,7 @@ function LivChatDemo() {
         <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} slashTools={advisorSlashTools} />
         <DemoPanel hat={streamHat} adapter={streamAdapter} />
         <DockDemoPanel hat={dockHat} adapter={dockAdapter} />
+        <DemoPanel hat={longReplyHat} adapter={longReplyAdapter} />
       </div>
     </div>
   )
