@@ -30,6 +30,12 @@ const URLS: Record<GlyphVariant, string> = {
   rooted: rootedUrl,
 }
 
+// Raw asset URLs for consumers that can't use <Glyph>'s wrapped <img> — e.g. an <image href>
+// inside an <svg> canvas that pans/zooms (ConnectionsGraph's node-graph pattern). Same
+// Vite-imported, content-hashed URLs the component itself renders, so a canonical glyph update
+// propagates to these consumers without a manual re-vendor step.
+export const GLYPH_URLS: Record<GlyphVariant, string> = URLS
+
 // Liv-state motion: the SAME canonical mark, animated by CSS to signal
 // what Liv is doing — never a new/alternate glyph (the naming/glyph law forbids inventing an
 // L/dot/spark mark). Optional and defaults to unanimated ('none') so every existing consumer
