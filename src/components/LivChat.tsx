@@ -764,7 +764,7 @@ export const livChatStylesheet = `
    own popovers (Brain / actions use 30–31). border-radius:0 + max-height are also set inline on the
    root/transcript (an inline style a plain stylesheet selector can't override), so this rule's role
    is the positioning escape; the inline overrides handle the size/corner clamp. */
-.lc-root[data-dock="full"] { position: fixed; inset: 0; width: auto; max-width: 100%; max-height: 100vh; border-radius: 0; z-index: 60; }
+.lc-root[data-dock="full"] { position: fixed; inset: 0; width: auto; max-width: 100%; max-height: 100dvh; border-radius: 0; z-index: 60; }
 .lc-root[data-dock="full"] .lc-transcript { max-height: none; }
 /* Artifacts panel (livchat-artifacts-system) — a draggable vertical split inside the same grid
    cell .lc-main used to fill alone; .lc-main and .lc-artifact-panel's flex-basis percentages are
@@ -891,6 +891,19 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  // Composer auto-grow. The textarea starts pinned at minHeight (one row); without this, any
+  // draft/placeholder that wraps past ~1.8 lines exceeds that fixed height and the browser's
+  // native caret-follow scroll kicks in, scrolling the box's TOP line half out of view (it reads
+  // as clipped/cut-off text, not a clean scroll) instead of the box growing to show it. Runs off
+  // `draft` (not just onChange) so it also re-measures on a programmatic clear (send, slash-tool
+  // select) and shrinks back down to minHeight.
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(160, Math.max(44, el.scrollHeight))}px`
+  }, [draft])
   // Enter sends only on a physical keyboard (fine pointer). On a touch device the Return key inserts
   // a newline instead, and the user sends with the Send button. Device-static, so read once.
   const [enterSends] = useState(() => typeof window === 'undefined' || !window.matchMedia?.('(pointer: coarse)')?.matches)
@@ -1967,7 +1980,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   }
 
   return (
-    <section className="lc-root" data-dock={dock} style={{ ...S.card, ['--lc-accent' as string]: accent, ...(dock === 'full' ? { borderRadius: 0, maxHeight: '100vh' } : null) }}>
+    <section className="lc-root" data-dock={dock} style={{ ...S.card, ['--lc-accent' as string]: accent, ...(dock === 'full' ? { borderRadius: 0, maxHeight: '100dvh' } : null) }}>
       <div style={S.head}>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {/* History (N) pill — always visible, opens the slide-in drawer over the transcript.
@@ -2359,7 +2372,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
             })()}
           </div>
 
-          <div style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm, flex: '0 0 auto' }}>
+          {/* dock="full" escapes to a fixed full-viewport overlay (no host chrome to absorb the
+              iOS home-indicator inset), so the composer/toolbar needs its own safe-area padding
+              here — same env(safe-area-inset-bottom) technique the Brain sheet already uses
+              below, otherwise the bottom row sits flush against (and gets covered by) the home
+              indicator on a real device. */}
+          <div style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm, flex: '0 0 auto',
+            ...(dock === 'full' ? { paddingBottom: `calc(${space.sm}px + env(safe-area-inset-bottom, 0px))` } : null) }}>
             {files.length > 0 && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                 {files.map((f, i) => (
@@ -2429,7 +2448,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   </div>
                 </>
               )}
-              <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
+              <textarea ref={composerRef} className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
                 placeholder={hat.placeholder || 'Message Liv…'}
                 value={draft}
                 onChange={(e) => {
