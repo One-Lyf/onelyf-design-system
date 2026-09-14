@@ -894,6 +894,19 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  // Composer auto-grow. The textarea starts pinned at minHeight (one row); without this, any
+  // draft/placeholder that wraps past ~1.8 lines exceeds that fixed height and the browser's
+  // native caret-follow scroll kicks in, scrolling the box's TOP line half out of view (it reads
+  // as clipped/cut-off text, not a clean scroll) instead of the box growing to show it. Runs off
+  // `draft` (not just onChange) so it also re-measures on a programmatic clear (send, slash-tool
+  // select) and shrinks back down to minHeight.
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(160, Math.max(44, el.scrollHeight))}px`
+  }, [draft])
   // Enter sends only on a physical keyboard (fine pointer). On a touch device the Return key inserts
   // a newline instead, and the user sends with the Send button. Device-static, so read once.
   const [enterSends] = useState(() => typeof window === 'undefined' || !window.matchMedia?.('(pointer: coarse)')?.matches)
@@ -1984,6 +1997,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         paddingBottom: `calc(${space.md}px + env(safe-area-inset-bottom, 0px))`,
       } : null),
     }}>
+
       <div style={S.head}>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {/* History (N) pill — always visible, opens the slide-in drawer over the transcript.
@@ -2445,7 +2459,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   </div>
                 </>
               )}
-              <textarea className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
+              <textarea ref={composerRef} className="ds-input" style={{ ...S.input, width: '100%', resize: 'none', minHeight: 44, maxHeight: 160 }}
                 placeholder={hat.placeholder || 'Message Liv…'}
                 value={draft}
                 onChange={(e) => {

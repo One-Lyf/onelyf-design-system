@@ -18,6 +18,7 @@ import {
   ThemeToggle,
   LivChat, livChatStylesheet,
   type LivHat, type LivProposedAction, type LivActionQueue, type LivChatAction, type LivSlashTool,
+  type LivKeyInfo,
 } from '../src'
 import { cssVar } from '../src/theme'
 import {
@@ -93,9 +94,10 @@ function DemoPanel({ hat, adapter, queue, actions, slashTools }: {
 // sits inside this 640px box; in 'full' it escapes to a fixed full-viewport overlay (position:fixed
 // inset:0) — proving the geometry clears the host box with no host change. The instance stays
 // mounted across the toggle, so the conversation + draft survive the state change.
-function DockDemoPanel({ hat, adapter }: {
+function DockDemoPanel({ hat, adapter, actions }: {
   hat: LivHat
   adapter: ReturnType<typeof useDemoActionQueue>['adapter']
+  actions?: LivChatAction[]
 }) {
   const [dock, setDock] = useState<'panel' | 'full'>('panel')
   return (
@@ -106,6 +108,7 @@ function DockDemoPanel({ hat, adapter }: {
       <LivChat
         hat={hat}
         adapter={adapter}
+        actions={actions}
         dock={dock}
         onMaximize={() => setDock('full')}
         onRestore={() => setDock('panel')}
@@ -119,7 +122,21 @@ function LivChatDemo() {
   const advisor = useDemoActionQueue(advisorReplyFor)
   // Full-screen dock demo: an independent backend/adapter so it doesn't share state with the panels.
   const dockBackend = useMemo(() => createInMemoryLivBackend(), [])
-  const dockAdapter = useMemo(() => createDemoAdapter(dockBackend, commisReplyFor, () => {}), [dockBackend])
+  // Wires a minimal `key` port (real liv-console/Builder dock instances always have one) so the
+  // Brain pill actually renders in this harness — needed to visually verify DS Brain-pill/toolbar
+  // bugs reported against dock="full" (liv-console-builder-ui-regressions-2026-09-13) instead of
+  // reasoning about them from source alone.
+  const dockAdapter = useMemo(() => {
+    const base = createDemoAdapter(dockBackend, commisReplyFor, () => {})
+    let keyInfo: LivKeyInfo = { hasKey: true, model: 'claude-sonnet-4-6' }
+    return {
+      ...base,
+      key: {
+        async get() { return { ok: true as const, value: keyInfo } },
+        async set(patch: Partial<LivKeyInfo>) { keyInfo = { ...keyInfo, ...patch }; return { ok: true as const, value: keyInfo } },
+      },
+    }
+  }, [dockBackend])
   // Interrupt-a-turn harness: a slow word-by-word stream with a working Stop (abort) port, whose
   // backend does NOT persist a cancelled reply — so the partial that survives in the transcript
   // proves LivChat's own partial-commit (livchat-interrupt-turn gate).
@@ -171,7 +188,12 @@ function LivChatDemo() {
     placeholder: 'Use the header maximize button to go full-screen…',
     emptyText: 'Tap the maximize icon in the header — this card fills the whole viewport.',
     description: 'Full-screen (maximize) dock harness — toggle it with the header maximize/restore button.',
+    models: [{ id: 'claude-sonnet-4-6', label: 'Sonnet 4.6 · balanced' }],
   }
+
+  const dockActions: LivChatAction[] = [
+    { id: 'demo-tool', label: 'Demo tool', hint: 'Exercises the Tools button in the dock="full" harness', onSelect: () => {} },
+  ]
 
   const longReplyHat: LivHat = {
     name: 'Liv',
@@ -228,7 +250,7 @@ function LivChatDemo() {
         <DemoPanel hat={commisHat} adapter={commis.adapter} queue={commis.queue} />
         <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} slashTools={advisorSlashTools} />
         <DemoPanel hat={streamHat} adapter={streamAdapter} />
-        <DockDemoPanel hat={dockHat} adapter={dockAdapter} />
+        <DockDemoPanel hat={dockHat} adapter={dockAdapter} actions={dockActions} />
         <DemoPanel hat={longReplyHat} adapter={longReplyAdapter} />
       </div>
     </div>
