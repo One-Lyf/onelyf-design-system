@@ -763,8 +763,11 @@ export const livChatStylesheet = `
    LivDock box to cover the viewport — no host change needed. The z-index sits above the composer's
    own popovers (Brain / actions use 30–31). border-radius:0 + max-height are also set inline on the
    root/transcript (an inline style a plain stylesheet selector can't override), so this rule's role
-   is the positioning escape; the inline overrides handle the size/corner clamp. */
-.lc-root[data-dock="full"] { position: fixed; inset: 0; width: auto; max-width: 100%; max-height: 100vh; border-radius: 0; z-index: 60; }
+   is the positioning escape; the inline overrides handle the size/corner clamp. 100dvh (not 100vh)
+   so mobile Safari's collapsing address bar doesn't clip the bottom composer — same fix as citadel
+   PR #140 (WaveRider). Safe-area padding for the header/composer against the physical screen edge
+   lives on the inline overrides below, for the same reason max-height does. */
+.lc-root[data-dock="full"] { position: fixed; inset: 0; width: auto; max-width: 100%; max-height: 100dvh; border-radius: 0; z-index: 60; }
 .lc-root[data-dock="full"] .lc-transcript { max-height: none; }
 /* Artifacts panel (livchat-artifacts-system) — a draggable vertical split inside the same grid
    cell .lc-main used to fill alone; .lc-main and .lc-artifact-panel's flex-basis percentages are
@@ -1967,7 +1970,20 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   }
 
   return (
-    <section className="lc-root" data-dock={dock} style={{ ...S.card, ['--lc-accent' as string]: accent, ...(dock === 'full' ? { borderRadius: 0, maxHeight: '100vh' } : null) }}>
+    <section className="lc-root" data-dock={dock} style={{
+      ...S.card, ['--lc-accent' as string]: accent,
+      // Full-dock touches the physical screen edges (position:fixed, inset:0 — see the
+      // .lc-root[data-dock="full"] rule above), so the header/composer need real safe-area
+      // padding on top of the card's normal space.md padding, or the header sits under the
+      // iOS notch/status bar and the composer sits under the home indicator — the exact bug
+      // citadel PR #140 (WaveRider) hit and fixed for its own header close button.
+      ...(dock === 'full' ? {
+        borderRadius: 0,
+        maxHeight: '100dvh',
+        paddingTop: `calc(${space.md}px + env(safe-area-inset-top, 0px))`,
+        paddingBottom: `calc(${space.md}px + env(safe-area-inset-bottom, 0px))`,
+      } : null),
+    }}>
       <div style={S.head}>
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>
           {/* History (N) pill — always visible, opens the slide-in drawer over the transcript.
@@ -2462,7 +2478,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   anchored popover — a professional, Claude-model-selector-like
                   brain-menu direction. */}
               {showKey && (
-                <div style={{ display: 'inline-flex' }}>
+                <div style={{ display: 'inline-flex', minWidth: 0 }}>
                   {/* Brain pill: opaque surface backing + accent border, matching Tummyful's
                       original `.composer-modelpill` canon — was `background: transparent` with
                       a subtle grey border, which read as a floating word rather than a pill
@@ -2471,12 +2487,21 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                       accent color they wear (terracotta / green) still comes from their own
                       hat.accent, so this stays palette-agnostic. */}
                   <button type="button" className="lc-iconbtn ds-btn"
-                    style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
+                    style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700, minWidth: 0 }}
                     title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
                     aria-expanded={brainOpen} aria-haspopup="dialog" onClick={() => setBrainOpen((o) => !o)}>
                     {hat.glyph === 'live' && <Glyph variant="live" size={14} animated={livGlyphState} alt="" />}
-                    <span>{keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add Key'}</span>
-                    <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+                    {/* whiteSpace:nowrap + ellipsis, NOT the default wrap: a cramped toolbar (many
+                        icons + a long model name) wraps this label to 2 lines, growing the pill
+                        taller than its sibling icon buttons and visually breaking the row — reads
+                        as the label text bleeding past the pill's edges. minWidth:0 up the chain
+                        (this span + its button + wrapper div) is what lets it actually
+                        shrink/truncate instead of forcing the row to overflow the card's own
+                        overflow:hidden bounds. */}
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                      {keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add Key'}
+                    </span>
+                    <span style={{ fontSize: 9, opacity: 0.7, flexShrink: 0 }}>▾</span>
                   </button>
                 </div>
               )}
