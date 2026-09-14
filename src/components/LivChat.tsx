@@ -91,6 +91,17 @@ export type LivChatSendResult =
   | { ok: true; usage?: LivUsage; extras?: unknown }
   | { ok: false; error?: { message?: string; detail?: string }; extras?: unknown }
 
+// livchat-agentic-workflows: a turn Liv runs in the background, outliving this chat turn instead
+// of streaming inline. `sendBackground` only kicks the work off (the model call hasn't
+// necessarily even started yet); `pollTask` is how LivChat learns it finished.
+export type LivTaskStatus = 'queued' | 'running' | 'done' | 'error'
+export type LivBackgroundSendResult =
+  | { ok: true; taskId: string }
+  | { ok: false; error?: { message?: string; detail?: string } }
+export type LivTaskPollResult =
+  | { ok: true; status: LivTaskStatus; result?: string | null; error?: string | null }
+  | { ok: false; error?: { message?: string } }
+
 // The one identity knob. `accent` themes the avatar/active states to the hat's
 // space (Cash Stash gold, Tummyful terracotta …); everything else falls back to
 // the design-system defaults so a hat is a few lines, not a restyle.
@@ -175,6 +186,17 @@ export interface LivChatAdapter {
     // so later turns carry less context. On success LivChat reloads the (now shorter) transcript.
     // Provider-agnostic: the app decides HOW to summarize. Absent → no compaction UI.
     compact?(sessionId: string): Promise<LivResult>
+    // Optional background-turn port (livchat-agentic-workflows). When BOTH sendBackground and
+    // pollTask are present, LivChat offers "Run in Background" in the composer's actions popover
+    // (no new composer icon — reuses the existing chef's-knife/tools popover, so the locked
+    // composer icon order is untouched). sendBackground kicks the turn off and returns
+    // immediately with a taskId instead of streaming; LivChat then polls pollTask on an interval
+    // and resolves the pending bubble to the real reply (re-fetched via messages.list, same as
+    // any other turn) or an error, without blocking the rest of the conversation in the meantime.
+    // Either or both absent → no background affordance, zero behavior change for every existing
+    // adapter (Commis, Advisor, ...).
+    sendBackground?(args: { sessionId: string; text: string; files?: File[] }): Promise<LivBackgroundSendResult>
+    pollTask?(taskId: string): Promise<LivTaskPollResult>
   }
   attachments?: { signedUrl(path: string): Promise<string> }
   key?: {
@@ -926,6 +948,35 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     const id = setInterval(() => setElapsedSec(Math.round((Date.now() - start) / 1000)), 1000)
     return () => clearInterval(id)
   }, [sending])
+  // Background tasks in flight (livchat-agentic-workflows completion surfacing), keyed by taskId.
+  // Each has a locally-synthesized placeholder bubble already sitting in `messages` (inserted at
+  // queue time, see send() below); this effect polls until every task resolves, then either
+  // reloads the transcript (done — the real reply is already in platform.liv_message by the time
+  // pollTask reports 'done') or turns the placeholder into an error line (error). Deliberately NOT
+  // gated on `sending`/`stillActive` — the whole point of a background task is that it outlives
+  // the turn that started it and survives a session switch (checked per-poll via activeIdRef).
+  const [pendingTasks, setPendingTasks] = useState<Record<string, { sessionId: string; placeholderId: string }>>({})
+  useEffect(() => {
+    const ids = Object.keys(pendingTasks)
+    if (!ids.length || !adapter.chat.pollTask) return
+    const id = setInterval(async () => {
+      for (const taskId of ids) {
+        const entry = pendingTasks[taskId]
+        if (!entry) continue
+        const r = await adapter.chat.pollTask!(taskId)
+        if (!r.ok || r.status === 'queued' || r.status === 'running') continue
+        setPendingTasks((t) => { const n = { ...t }; delete n[taskId]; return n })
+        if (activeIdRef.current !== entry.sessionId) continue // resolved for a session the user isn't looking at; drop it silently
+        if (r.status === 'done') {
+          const reloaded = await adapter.messages.list(entry.sessionId)
+          if (activeIdRef.current === entry.sessionId && reloaded.ok) { setMessages(reloaded.value.messages); resolveUrls(reloaded.value.messages) }
+        } else {
+          setMessages((m) => m.map((mm) => mm.id === entry.placeholderId ? { ...mm, content: r.error || "Liv couldn't finish this in the background." } : mm))
+        }
+      }
+    }, 3000)
+    return () => clearInterval(id)
+  }, [pendingTasks, adapter])
   // Animated Liv-state glyph (idle / thinking / running-a-workflow) — ties the brand mark's
   // motion to the same generating signal as the Thinking indicator above. This is purely a CSS
   // animation applied to the existing CANONICAL glyph (see Glyph.tsx's `animated` prop) — never
@@ -1113,6 +1164,9 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const [applyAllBusy, setApplyAllBusy] = useState(false)
   // The composer's actions menu open/close (Commis's chef's-knife popover).
   const [actionsOpen, setActionsOpen] = useState(false)
+  // livchat-agentic-workflows: both ports present -> the adapter genuinely supports background
+  // turns end to end, not just one half of the pair.
+  const canBackgroundSend = !!(adapter.chat.sendBackground && adapter.chat.pollTask)
   // `/`-menu state (livchat-slash-menu-canon): open while the draft is a bare `/command` typed
   // at the very start of the composer (Claude-Code-style — no mid-sentence triggering), the
   // arrow-key-selected row, and the pending chip once a tool with args has been picked but not
@@ -1493,7 +1547,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // async (setState), so reading them back via closure on the same tick would see stale values.
   // The composer's own Send button/Enter-key calls send() with no args, falling back to draft/
   // files exactly as before this override was added.
-  async function send(overrideText?: string, overrideFiles?: File[]) {
+  async function send(overrideText?: string, overrideFiles?: File[], background?: boolean) {
     const text = (overrideText ?? draft).trim()
     const draftFiles = overrideFiles ?? files
     if ((!text && draftFiles.length === 0) || sending) return
@@ -1542,6 +1596,24 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       }
       setDraft(''); setFiles([])
       if (fileRef.current) fileRef.current.value = ''
+
+      // Background path: kick the turn off and return immediately — no streaming, no blocking
+      // the rest of the conversation. A pending placeholder bubble stands in for the reply until
+      // the polling effect above resolves it (see pendingTasks).
+      if (background && adapter.chat.sendBackground && adapter.chat.pollTask) {
+        const bg = await adapter.chat.sendBackground({ sessionId, text, files: sentFiles })
+        if (!bg.ok) {
+          if (stillActive()) setMsg(bg.error?.message || 'Could not start the background task.')
+          return
+        }
+        const placeholderId = `task-${bg.taskId}`
+        if (stillActive()) {
+          setMessages((m) => [...m, { id: placeholderId, role: 'liv', modality: 'text', channel: 'console', content: '' }])
+        }
+        setPendingTasks((t) => ({ ...t, [bg.taskId]: { sessionId: sessionId!, placeholderId } }))
+        loadSessions()
+        return
+      }
 
       if (stillActive()) { setStreaming(''); setToolActivity(null) }
       const res = await adapter.chat.send({ sessionId, text, files: sentFiles }, (chunk) => {
@@ -2169,6 +2241,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               const isLast = m.id === messages[messages.length - 1]?.id
               const opts = !doc && !artifactFound && m.role === 'liv' ? extractOptions(m.content) : null
               const optionsLive = !!opts && isLast && !sending
+              // livchat-agentic-workflows: the locally-synthesized placeholder for a background
+              // task still in flight (queued/running) — send() inserts it with empty content and
+              // an id prefixed `task-`; the polling effect above fills in real content (done) or
+              // an error line (error) once pollTask reports a terminal status.
+              const isPendingTask = m.role === 'liv' && !m.content && m.id.startsWith('task-')
               return (
               <div key={m.id} className="lc-bubble" style={bubbleStyle(m.role)}>
                 {/* Read-aloud (accessibility): Play sits top-left of the response frame — the
@@ -2209,7 +2286,14 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                     })}
                   </div>
                 )}
-                {opts ? (
+                {isPendingTask ? (
+                  // Same "Thinking" pill language as the live-streaming bubble below (lc-thinking),
+                  // relabeled — this task is running detached from the turn that queued it, not
+                  // this component's own `sending` state, so it gets its own always-on pulse.
+                  <span className="lc-thinking" style={{ ...textStyle('caption'), color: cssVar.mid, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span className="lc-thinking-label">Running in background</span>
+                  </span>
+                ) : opts ? (
                   <>
                     {opts.text && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}><Linkified text={opts.text} onLinkTap={handleLinkTap} /></div>}
                     <div className="lc-options" role="group" aria-label="Choose an option" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2749,8 +2833,12 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               {/* Composer actions menu — Commis's chef's-knife popover ("turn this into…"),
                   Advisor's "add to budget" etc. DS owns the trigger + popover layout + click-out;
                   the app supplies items + handlers. The trigger uses hat.toolIcon when set (so
-                  Commis gets its chef's knife), else a generic tool glyph. */}
-              {actions && actions.length > 0 && (
+                  Commis gets its chef's knife), else a generic tool glyph. Also the background-
+                  send trigger (livchat-agentic-workflows): reusing this EXISTING popover rather
+                  than adding a new composer icon keeps the locked composer icon order untouched
+                  — a background-capable adapter just unlocks one more DS-owned item in the same
+                  list, host items and all. */}
+              {(canBackgroundSend || (actions && actions.length > 0)) && (
                 <div style={{ position: 'relative', display: 'inline-flex' }}>
                   <button type="button" className="lc-iconbtn"
                     style={{ ...S.composerIconbtn,
@@ -2775,7 +2863,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                         borderRadius: radius.md, padding: 4, boxShadow: 'var(--ds-shadow-card)',
                         display: 'flex', flexDirection: 'column', gap: 1,
                       }}>
-                        {actions.map((a) => (
+                        {actions?.map((a) => (
                           <button key={a.id} type="button" role="menuitem"
                             className="lc-actions-item"
                             disabled={a.disabled}
@@ -2788,6 +2876,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                             {a.hint && <span style={{ ...textStyle('caption'), color: cssVar.mid }}>{a.hint}</span>}
                           </button>
                         ))}
+                        {canBackgroundSend && (() => {
+                          const empty = !draft.trim() && files.length === 0
+                          return (
+                            <button type="button" role="menuitem"
+                              className="lc-actions-item"
+                              disabled={empty || sending}
+                              style={{ ...textStyle('bodySm'), textAlign: 'left', background: 'transparent', border: 0,
+                                padding: '8px 10px', borderRadius: radius.sm, cursor: (empty || sending) ? 'not-allowed' : 'pointer',
+                                color: (empty || sending) ? cssVar.dim : cssVar.ink, opacity: (empty || sending) ? 0.6 : 1,
+                                display: 'flex', flexDirection: 'column', gap: 2 }}
+                              onClick={() => { setActionsOpen(false); void send(undefined, undefined, true) }}>
+                              <span>Run in Background</span>
+                              <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Liv keeps working while you do something else — this reply lands in the conversation when it's done.</span>
+                            </button>
+                          )
+                        })()}
                       </div>
                     </>
                   )}
