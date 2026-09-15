@@ -652,8 +652,8 @@ function ExternalLinkModal({ url, safetyOpen, onToggleSafety, onOpen, onClose }:
           </button>
           {safetyOpen && (
             <ul style={{ ...textStyle('caption'), color: cssVar.mid, margin: '8px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <li><strong style={{ color: cssVar.ink }}>https://</strong> — Secure connection (encrypted)</li>
-              <li><strong style={{ color: cssVar.ink }}>Domain name</strong> — Check this is the site you expect to visit</li>
+              <li><strong style={{ color: cssVar.ink }}>https://</strong>: Secure connection (encrypted)</li>
+              <li><strong style={{ color: cssVar.ink }}>Domain name</strong>: Check this is the site you expect to visit</li>
               <li>Watch for misspellings (e.g., proton.me vs pr0t0n.me)</li>
               <li>Be cautious of unfamiliar domains or excessive subdomains</li>
             </ul>
@@ -2459,7 +2459,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="ds-btn" style={{ ...S.primaryBtn, opacity: (notReady || applying) ? 0.6 : 1 }}
                               disabled={notReady || applying} onClick={() => applyCard(c.id)}
-                              title={notReady ? "Needs a detail — tell Liv the missing part and it'll update this card" : 'Apply this change'}>
+                              title={notReady ? "Needs a detail. Tell Liv the missing part and it'll update this card" : 'Apply this change'}>
                               {applying ? 'Applying…' : 'Apply'}
                             </button>
                             <button className="ds-btn" style={S.ghostBtn} onClick={() => dismissCard(c.id)}>Dismiss</button>
@@ -2586,7 +2586,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                       hat.accent, so this stays palette-agnostic. */}
                   <button type="button" className="lc-iconbtn ds-btn"
                     style={{ ...textStyle('caption'), color: accent, background: cssVar.surface, border: `1px solid ${accent}`, borderRadius: radius.pill, padding: '4px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700, minWidth: 0 }}
-                    title="Brain — model + API key" aria-label="Brain — model, API key, and settings"
+                    title="Brain: model + API key" aria-label="Brain: model, API key, and settings"
                     aria-expanded={brainOpen} aria-haspopup="dialog" onClick={() => setBrainOpen((o) => !o)}>
                     {hat.glyph === 'live' && <Glyph variant="live" size={14} animated={livGlyphState} alt="" />}
                     {/* whiteSpace:nowrap + ellipsis, NOT the default wrap: a cramped toolbar (many
@@ -2639,7 +2639,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               {showKey && brainOpen && (
                 <div className="lc-sheet-scrim" onClick={() => setBrainOpen(false)}
                   style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <div role="dialog" aria-modal="true" aria-label="Brain — model, API key, and settings"
+                  <div role="dialog" aria-modal="true" aria-label="Brain: model, API key, and settings"
                     onClick={(e) => e.stopPropagation()}
                     className="lc-glass lc-brain-sheet"
                     style={{
@@ -2888,7 +2888,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                                 display: 'flex', flexDirection: 'column', gap: 2 }}
                               onClick={() => { setActionsOpen(false); void send(undefined, undefined, true) }}>
                               <span>Run in Background</span>
-                              <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Liv keeps working while you do something else — this reply lands in the conversation when it's done.</span>
+                              <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Liv keeps working while you do something else. This reply lands in the conversation when it's done.</span>
                             </button>
                           )
                         })()}
@@ -2912,7 +2912,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   background: handsFree ? accent : cssVar.surface,
                   borderColor: handsFree ? accent : cssVar.borderBright,
                   color: handsFree ? cssVar.onPrimary : cssVar.ink }}
-                title="Hands-free — read replies aloud" aria-pressed={handsFree}
+                title="Hands-free: read replies aloud" aria-pressed={handsFree}
                 onClick={() => setHandsFree((v) => {
                   const next = !v
                   // Fire onHandsFreeChange inside this user-gesture click handler so a consumer
