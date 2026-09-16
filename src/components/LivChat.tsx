@@ -2999,13 +2999,22 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                   <CloseI />
                 </button>
               </div>
-              <pre style={{ margin: 0, flex: 1, overflow: 'auto', padding: 12, ...textStyle('caption'), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                <code>
-                  {highlightCode(artifact.content, artifact.language).map((tok, i) => (
-                    <span key={i} style={{ color: SYNTAX_COLOR[tok.kind], fontStyle: tok.kind === 'comment' ? 'italic' : 'normal' }}>{tok.text}</span>
-                  ))}
-                </code>
-              </pre>
+              {artifact.language === 'html' ? (
+                <iframe
+                  srcDoc={artifact.content}
+                  sandbox="allow-scripts"
+                  style={{ margin: 0, flex: 1, border: 'none' }}
+                  title={artifact.title}
+                />
+              ) : (
+                <pre style={{ margin: 0, flex: 1, overflow: 'auto', padding: 12, ...textStyle('caption'), fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <code>
+                    {highlightCode(artifact.content, artifact.language).map((tok, i) => (
+                      <span key={i} style={{ color: SYNTAX_COLOR[tok.kind], fontStyle: tok.kind === 'comment' ? 'italic' : 'normal' }}>{tok.text}</span>
+                    ))}
+                  </code>
+                </pre>
+              )}
             </div>
           </>
         )}
