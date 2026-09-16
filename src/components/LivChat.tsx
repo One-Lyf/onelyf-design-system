@@ -101,6 +101,9 @@ export type LivBackgroundSendResult =
 export type LivTaskPollResult =
   | { ok: true; status: LivTaskStatus; result?: string | null; error?: string | null }
   | { ok: false; error?: { message?: string } }
+export type LivTaskCancelResult =
+  | { ok: true }
+  | { ok: false; error?: { message?: string } }
 
 // The one identity knob. `accent` themes the avatar/active states to the hat's
 // space (Cash Stash gold, Tummyful terracotta …); everything else falls back to
@@ -197,6 +200,11 @@ export interface LivChatAdapter {
     // adapter (Commis, Advisor, ...).
     sendBackground?(args: { sessionId: string; text: string; files?: File[] }): Promise<LivBackgroundSendResult>
     pollTask?(taskId: string): Promise<LivTaskPollResult>
+    // Optional: stop an in-flight background task (task-visibility tray). Same optional-port
+    // pattern as sendBackground/pollTask — absent means the tray still lists tasks and lets the
+    // user jump to their transcript, it just doesn't render a Stop control. Never fake a stop
+    // button with nothing behind it.
+    cancelTask?(taskId: string): Promise<LivTaskCancelResult>
   }
   attachments?: { signedUrl(path: string): Promise<string> }
   key?: {
@@ -500,6 +508,7 @@ const FileTextI = () => <svg {...svg}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 
 const ShieldI = () => <svg {...svg}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
 const CodeI = () => <svg {...svg}><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
 const ExternalLinkI = () => <svg {...svg}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+const ListChecksI = () => <svg {...svg}><path d="m3 17 2 2 4-4" /><path d="m3 7 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" /></svg>
 
 function ChannelIcon({ channel }: { channel?: string }) {
   if (channel === 'phone') return <PhoneI />
@@ -958,7 +967,36 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   // pollTask reports 'done') or turns the placeholder into an error line (error). Deliberately NOT
   // gated on `sending`/`stillActive` — the whole point of a background task is that it outlives
   // the turn that started it and survives a session switch (checked per-poll via activeIdRef).
-  const [pendingTasks, setPendingTasks] = useState<Record<string, { sessionId: string; placeholderId: string }>>({})
+  const [pendingTasks, setPendingTasks] = useState<Record<string, { sessionId: string; placeholderId: string; input: string; startedAt: number }>>({})
+  // Task-visibility tray (replaces the composer's opt-in "Run in Background" affordance as the
+  // surface for MANAGING background work): lists every in-flight task, lets the user jump to its
+  // session/transcript, and — where adapter.chat.cancelTask exists — stop it.
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+  // Short-lived local history so the tray can show a just-finished task alongside the in-flight
+  // ones ("view a running/completed background task"). Capped and in-memory only — there's no
+  // list-tasks backend endpoint yet, so this doesn't survive a reload; it just bridges the gap
+  // between "resolved" and "the user opened the tray to look".
+  const [recentTasks, setRecentTasks] = useState<Array<{ taskId: string; sessionId: string; input: string; status: 'done' | 'error'; completedAt: number }>>([])
+  async function cancelTask(taskId: string) {
+    if (!adapter.chat.cancelTask) return
+    setCancellingId(taskId)
+    try {
+      const r = await adapter.chat.cancelTask(taskId)
+      if (r.ok) {
+        const entry = pendingTasks[taskId]
+        setPendingTasks((t) => { const n = { ...t }; delete n[taskId]; return n })
+        if (entry) setMessages((m) => m.map((mm) => mm.id === entry.placeholderId ? { ...mm, content: 'Stopped.' } : mm))
+      } else {
+        setMsg(r.error?.message || 'Could not stop this task.')
+      }
+    } catch (e) {
+      console.error('adapter.chat.cancelTask threw', e)
+      setMsg('Could not stop this task.')
+    } finally {
+      setCancellingId(null)
+    }
+  }
   useEffect(() => {
     const ids = Object.keys(pendingTasks)
     if (!ids.length || !adapter.chat.pollTask) return
@@ -969,6 +1007,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         const r = await adapter.chat.pollTask!(taskId)
         if (!r.ok || r.status === 'queued' || r.status === 'running') continue
         setPendingTasks((t) => { const n = { ...t }; delete n[taskId]; return n })
+        setRecentTasks((rt) => [{ taskId, sessionId: entry.sessionId, input: entry.input, status: (r.status === 'done' ? 'done' : 'error') as 'done' | 'error', completedAt: Date.now() }, ...rt].slice(0, 5))
         if (activeIdRef.current !== entry.sessionId) continue // resolved for a session the user isn't looking at; drop it silently
         if (r.status === 'done') {
           const reloaded = await adapter.messages.list(entry.sessionId)
@@ -1613,7 +1652,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         if (stillActive()) {
           setMessages((m) => [...m, { id: placeholderId, role: 'liv', modality: 'text', channel: 'console', content: '' }])
         }
-        setPendingTasks((t) => ({ ...t, [bg.taskId]: { sessionId: sessionId!, placeholderId } }))
+        setPendingTasks((t) => ({ ...t, [bg.taskId]: { sessionId: sessionId!, placeholderId, input: text, startedAt: Date.now() } }))
         loadSessions()
         return
       }
@@ -2122,6 +2161,30 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           >
             <DownloadI />
           </button>
+          {/* Task-visibility tray trigger. Gated on canBackgroundSend — same optional-port rule
+              as the composer's "Run in Background" item, zero surface change for an adapter that
+              doesn't support background turns. */}
+          {canBackgroundSend && (
+            <button
+              type="button"
+              className="lc-iconbtn"
+              style={{ ...S.iconbtn, position: 'relative' }}
+              aria-label="Background tasks"
+              title="Background tasks"
+              onClick={() => setTasksOpen(true)}
+            >
+              <ListChecksI />
+              {Object.keys(pendingTasks).length > 0 && (
+                <span aria-hidden="true" style={{
+                  position: 'absolute', top: 0, right: 0, minWidth: 14, height: 14, borderRadius: radius.pill,
+                  background: accent, color: cssVar.onPrimary, fontSize: 9, fontWeight: 700, lineHeight: '14px',
+                  textAlign: 'center', padding: '0 3px',
+                }}>{Object.keys(pendingTasks).length}</span>
+                /* badge counts only in-flight tasks — recentTasks are already-resolved history,
+                   not something that needs the user's attention the way a running task does */
+              )}
+            </button>
+          )}
         </div>
         {!hat.hideHeaderTitle && (
           <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
@@ -3092,6 +3155,53 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
               <button type="button" className="ds-btn" style={{ ...S.primaryBtn, flex: 1 }} onClick={copyTranscript}>Copy</button>
               <button type="button" className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, flex: 1, padding: '8px 10px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${accent}`, background: cssVar.surface, color: accent }} onClick={downloadTranscript}>Download</button>
             </div>
+          </div>
+        </div>
+      )}
+      {tasksOpen && (
+        <div onClick={() => setTasksOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div role="dialog" aria-label="Background tasks" aria-modal="true" onClick={(e) => e.stopPropagation()}
+            className="lc-glass"
+            style={{ border: `1px solid ${cssVar.border}`, borderRadius: radius.md, boxShadow: 'var(--ds-shadow-card)', width: '100%', maxWidth: 480, maxHeight: '85vh', display: 'flex', flexDirection: 'column', gap: 8, padding: 12, boxSizing: 'border-box' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Background Tasks</span>
+              <button type="button" className="ds-btn" style={{ ...textStyle('caption'), color: cssVar.mid, background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                aria-label="Close background tasks" onClick={() => setTasksOpen(false)}>Close</button>
+            </div>
+            {Object.keys(pendingTasks).length === 0 && recentTasks.length === 0 ? (
+              <p style={{ ...textStyle('bodySm'), color: cssVar.mid, margin: 0, padding: '8px 0' }}>Nothing running in the background right now.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto' }}>
+                {Object.entries(pendingTasks).map(([taskId, t]) => (
+                  <div key={taskId} style={{ border: `1px solid ${cssVar.border}`, borderRadius: radius.sm, padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <span style={{ ...textStyle('bodySm'), color: cssVar.ink, overflowWrap: 'anywhere' }}>{t.input.length > 96 ? `${t.input.slice(0, 96)}…` : t.input}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ ...textStyle('caption'), color: cssVar.mid, flex: 1 }}>Running, started {new Date(t.startedAt).toLocaleTimeString()}</span>
+                      <button type="button" className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 8px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${cssVar.border}`, background: cssVar.surface, color: cssVar.ink }}
+                        onClick={() => { setTasksOpen(false); if (t.sessionId !== activeId) void selectSession(t.sessionId) }}>View</button>
+                      {adapter.chat.cancelTask && (
+                        <button type="button" className="ds-btn" disabled={cancellingId === taskId}
+                          style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 8px', borderRadius: radius.sm, cursor: cancellingId === taskId ? 'not-allowed' : 'pointer', border: `1px solid ${cssVar.border}`, background: cssVar.surface, color: cssVar.mid, opacity: cancellingId === taskId ? 0.6 : 1 }}
+                          onClick={() => void cancelTask(taskId)}>Stop</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {recentTasks.map((t) => (
+                  <div key={t.taskId} style={{ border: `1px solid ${cssVar.border}`, borderRadius: radius.sm, padding: 8, display: 'flex', flexDirection: 'column', gap: 6, opacity: 0.85 }}>
+                    <span style={{ ...textStyle('bodySm'), color: cssVar.ink, overflowWrap: 'anywhere' }}>{t.input.length > 96 ? `${t.input.slice(0, 96)}…` : t.input}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ ...textStyle('caption'), color: t.status === 'error' ? cssVar.danger : cssVar.mid, flex: 1 }}>
+                        {t.status === 'done' ? 'Finished' : 'Failed'} {new Date(t.completedAt).toLocaleTimeString()}
+                      </span>
+                      <button type="button" className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 8px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${cssVar.border}`, background: cssVar.surface, color: cssVar.ink }}
+                        onClick={() => { setTasksOpen(false); if (t.sessionId !== activeId) void selectSession(t.sessionId) }}>View</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
