@@ -1943,6 +1943,10 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
         // srcdoc parses HTML entities in its attribute value, so escape only & and " to
         // keep the artifact's own markup intact; sandbox without allow-same-origin gives
         // the iframe an opaque origin so any script inside can't read console cookies.
+        // SECURITY: never add allow-same-origin to this sandbox attribute. Combined with
+        // allow-scripts (needed for artifacts to run at all), that pairing lets sandboxed
+        // artifact-authored script escape the opaque origin and reach parent-origin state
+        // (cookies, localStorage, DOM) — a full sandbox escape. Keep allow-scripts alone.
         const srcdoc = artifact.content.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
         html = `<!doctype html><html><head><meta charset="utf-8"><title>${titleEsc}</title>` +
           `<style>html,body{margin:0;padding:0;height:100%;background:#171b16}` +
