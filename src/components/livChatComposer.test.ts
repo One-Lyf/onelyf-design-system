@@ -2,7 +2,7 @@
 // (or plain `node --test` on a Node version where TS type-stripping is unflagged).
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, streamingArtifactPreview, extractOptions, attachmentError, linkifySegments, isSameOrigin } from './livChatComposer.ts'
 
 const TRANSCRIPT = [
   { role: 'user', content: 'hi there' },
@@ -266,6 +266,34 @@ test('artifactFilename is filesystem-safe, slugged from the title, and extension
   assert.equal(artifactFilename('Countdown Timer', 'tsx', '2026-09-08-0200'), 'countdown-timer-2026-09-08-0200.tsx')
   assert.equal(artifactFilename('', 'js', '2026-09-08'), 'artifact-2026-09-08.js')
   assert.equal(artifactFilename('Notes', 'unknownlang', '2026-09-08'), 'notes-2026-09-08.txt')
+})
+
+// ── streamingArtifactPreview — livchat-console-artifact-regressions ──
+// (extractArtifact needs the CLOSING fence, so it can't help while a reply is still
+// streaming in; this is the mid-stream counterpart used to swap the raw fence for a
+// placeholder instead of spamming the transcript with the artifact's raw source.)
+test('no fence anywhere yet → null (ordinary streaming text renders as-is)', () => {
+  assert.equal(streamingArtifactPreview('Just some ordinary streaming t'), null)
+  assert.equal(streamingArtifactPreview(''), null)
+  assert.equal(streamingArtifactPreview(null), null)
+  assert.equal(streamingArtifactPreview(undefined), null)
+})
+
+test('the opening fence line is still being typed (no newline yet) → placeholder with a generic title', () => {
+  const r = streamingArtifactPreview('Here you go:\n\n```artifact tsx Countdown')
+  assert.equal(r?.textBefore, 'Here you go:')
+  assert.equal(r?.title, 'Artifact')
+})
+
+test('the opening fence line has landed → placeholder picks up the title', () => {
+  const r = streamingArtifactPreview('Here you go:\n\n```artifact tsx Countdown Timer\nexport default')
+  assert.equal(r?.textBefore, 'Here you go:')
+  assert.equal(r?.title, 'Countdown Timer')
+})
+
+test('the fence has already closed but the turn is still streaming → still a placeholder, not the raw close', () => {
+  const r = streamingArtifactPreview('```artifact tsx Countdown Timer\nexport default function CountdownTimer() {}\n```\nHope that helps!')
+  assert.equal(r?.title, 'Countdown Timer')
 })
 
 // ── extractOptions — general decision/options cards (livchat-decision-options-cards) ──

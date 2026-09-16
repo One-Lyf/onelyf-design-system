@@ -139,9 +139,24 @@ export function createStreamingDemoAdapter(backend: InMemoryLivBackend): LivChat
         backend.appendMessage(sessionId, { id: backend.nextMessageId(), role: 'user', content: text })
         ac = new AbortController()
         const signal = ac.signal
-        const words = (`You said "${text}". Here is a deliberately slow, word-by-word streamed reply `
-          + `so there is time to press Stop mid-stream and watch the partial answer stay put in the `
-          + `transcript instead of vanishing.`).split(' ')
+        // livchat-console-artifact-regressions demo: a "recipe card artifact" ask streamed
+        // word-by-word (real per-chunk gaps), unlike the Commis "recipe card artifact" demo
+        // above which uses the single-onChunk createDemoAdapter — per LivChat's own comment on
+        // its `messages` effect, that adapter shape never produces a visible `streaming` value
+        // at all, so it can never exercise (or catch a regression in) how the raw ```artifact
+        // fence renders WHILE streaming, only after the turn already committed. This is the one
+        // demo trigger that actually drives that path.
+        const replyText = /recipe card artifact/i.test(text)
+          ? 'Building your recipe card — one second.\n\n'
+            + '```artifact tsx Chicken Stir-Fry Card\n'
+            + 'export default function RecipeCard() {\n'
+            + '  return <div className="recipe-card"><h2>Chicken Stir-Fry</h2></div>\n'
+            + '}\n'
+            + '```'
+          : `You said "${text}". Here is a deliberately slow, word-by-word streamed reply `
+            + `so there is time to press Stop mid-stream and watch the partial answer stay put in the `
+            + `transcript instead of vanishing.`
+        const words = replyText.split(' ')
         let acc = ''
         let first = true
         for (const w of words) {

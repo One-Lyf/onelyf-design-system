@@ -233,6 +233,31 @@ export function extractArtifact(content: string | null | undefined): { text: str
   return { text, artifact: { title, language, content: body } }
 }
 
+// While a reply is still streaming in (before the turn commits to `messages`), `extractArtifact`
+// above can't help — it needs the CLOSING fence, which hasn't arrived yet, so the raw
+// ```artifact ... fence would otherwise render as plain text mid-stream (every character of the
+// artifact source spamming the transcript until the close lands). This detects the OPENING fence
+// as soon as it appears in the accumulating streamed string — even before its own line has a
+// trailing newline — so the caller can swap the raw tail for a "Generating artifact…" placeholder
+// instead. Matches on the first opening fence only, same one-artifact-per-reply scope as
+// `extractArtifact`; whether that fence has since closed doesn't matter here, since everything
+// from the opening fence onward stays hidden until the turn commits and the normal
+// collapsed-link rendering (via `extractArtifact` against `m.content`) takes over.
+export function streamingArtifactPreview(content: string | null | undefined): { textBefore: string; title: string } | null {
+  if (!content) return null
+  const full = ARTIFACT_OPEN.exec(content)
+  if (full) {
+    const textBefore = content.slice(0, full.index).trim()
+    const info = (full[1] || '').trim()
+    const [, ...titleParts] = info.split(/\s+/).filter(Boolean)
+    return { textBefore, title: titleParts.join(' ') || 'Artifact' }
+  }
+  // The opening fence's own info line hasn't reached a newline yet (still being typed).
+  const partial = /```artifact[^\n]*$/.exec(content)
+  if (!partial) return null
+  return { textBefore: content.slice(0, partial.index).trim(), title: 'Artifact' }
+}
+
 // File extension per language tag, for the panel's Download action. Falls back to
 // `.txt` for anything not in this list rather than guessing — an unrecognized
 // language tag (a typo, a language DS hasn't listed here yet) shouldn't produce a
