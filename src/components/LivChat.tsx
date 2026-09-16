@@ -767,7 +767,10 @@ export const livChatStylesheet = `
    shifts right — the sidebar sits ALONGSIDE the transcript, not over it. No scrim,
    no blanket. On the narrowest viewports the sidebar takes most of the width
    because the transcript would be too narrow otherwise. */
-.lc-body { display: grid; grid-template-columns: 1fr; gap: 0; transition: grid-template-columns .18s ease; }
+/* grid-template-rows: minmax(0, 1fr) makes the sole grid row fill the flex-1 body height
+   (min 0 so it can shrink). Without it the row is auto (child min-content), and the
+   rail collapses to 0 because its own overflow-y:auto reports 0 min-content. */
+.lc-body { display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); gap: 0; transition: grid-template-columns .18s ease; }
 .lc-body[data-rail-open="true"] { grid-template-columns: minmax(200px, 260px) 1fr; gap: 12px; }
 .lc-rail {
   overflow-y: auto;
