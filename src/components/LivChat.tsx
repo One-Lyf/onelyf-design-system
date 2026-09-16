@@ -16,7 +16,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from
 import { radius, space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
-import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument, type LivArtifact } from './livChatComposer'
+import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, streamingArtifactPreview, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument, type LivArtifact } from './livChatComposer'
 import { highlightCode, type SyntaxTokenKind } from './livChatSyntaxHighlight'
 import { curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID } from './livChatModels'
 import type { LivModel } from './livChatModels'
@@ -2350,7 +2350,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                     {artifactFound.text && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}><Linkified text={artifactFound.text} onLinkTap={handleLinkTap} /></div>}
                     <button
                       type="button"
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '8px 10px', background: cssVar.surface, cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${cssVar.border}`, borderRadius: radius.md, padding: '8px 10px', background: cssVar.surface, color: cssVar.ink, cursor: 'pointer', width: '100%', textAlign: 'left' }}
                       onClick={() => { artifactUserClosedRef.current = false; setArtifact(artifactFound.artifact) }}
                       title={`Open ${artifactFound.artifact.title} in the artifacts panel`}
                     >
@@ -2414,10 +2414,26 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 </div>
                 {toolActivity && <ToolActivityLine activity={toolActivity} brandIcon={hat.toolIcon} labels={hat.toolLabels} />}
                 {/* The caret only trails live text; while a tool runs (no text yet)
-                    the activity line above carries the "working" signal instead. */}
-                {streaming && (
-                  <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><Linkified text={streaming} onLinkTap={handleLinkTap} /><span className="lc-caret">▍</span></div>
-                )}
+                    the activity line above carries the "working" signal instead. livchat-console-
+                    artifact-regressions: once an ```artifact fence opens, everything from there
+                    onward is raw code streaming in one character at a time — show a "Generating
+                    artifact" placeholder instead of dumping it into the transcript; the normal
+                    collapsed-link rendering (extractArtifact against `m.content`) takes over the
+                    instant the turn commits. */}
+                {streaming && (() => {
+                  const preview = streamingArtifactPreview(streaming)
+                  if (!preview) {
+                    return <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><Linkified text={streaming} onLinkTap={handleLinkTap} /><span className="lc-caret">▍</span></div>
+                  }
+                  return (
+                    <>
+                      {preview.textBefore && <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', marginBottom: space.xs }}><Linkified text={preview.textBefore} onLinkTap={handleLinkTap} /></div>}
+                      <span className="lc-thinking" style={{ ...textStyle('caption'), color: cssVar.mid, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span className="lc-thinking-label">Generating artifact: {preview.title}…</span>
+                      </span>
+                    </>
+                  )
+                })()}
               </div>
             )}
             {/* Action-card stack — moved to render AFTER the streaming bubble so cards from the
