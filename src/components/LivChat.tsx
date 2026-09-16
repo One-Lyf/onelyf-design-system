@@ -1929,18 +1929,32 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     }
   }
 
-  // "Open in new tab / full-screen" (decision #2's third action for v1 — Publish/share-link
-  // is a later phase, since it needs real hosting). No backend involved: a self-contained
-  // HTML page holding the escaped source, opened from a Blob URL.
+  // "Open in new tab / full-screen." HTML artifacts render live in a sandboxed iframe
+  // that fills the viewport (opaque origin via sandbox without allow-same-origin — no
+  // cookie / localStorage access back to the console). Non-HTML artifacts keep the
+  // pre-wrapped source view. No backend involved: everything is a self-contained
+  // Blob URL, revoked after the new tab has had time to fetch it.
   function expandArtifact() {
     if (!artifact) return
     try {
-      const esc = artifact.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       const titleEsc = artifact.title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${titleEsc}</title>` +
-        `<style>body{margin:0;background:#171b16;color:#e8e4d6;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}` +
-        `pre{margin:0;padding:24px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>` +
-        `<body><pre>${esc}</pre></body></html>`
+      let html: string
+      if (artifact.language === 'html') {
+        // srcdoc parses HTML entities in its attribute value, so escape only & and " to
+        // keep the artifact's own markup intact; sandbox without allow-same-origin gives
+        // the iframe an opaque origin so any script inside can't read console cookies.
+        const srcdoc = artifact.content.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        html = `<!doctype html><html><head><meta charset="utf-8"><title>${titleEsc}</title>` +
+          `<style>html,body{margin:0;padding:0;height:100%;background:#171b16}` +
+          `iframe{border:0;width:100vw;height:100vh;display:block}</style></head>` +
+          `<body><iframe sandbox="allow-scripts" srcdoc="${srcdoc}" title="${titleEsc}"></iframe></body></html>`
+      } else {
+        const esc = artifact.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        html = `<!doctype html><html><head><meta charset="utf-8"><title>${titleEsc}</title>` +
+          `<style>body{margin:0;background:#171b16;color:#e8e4d6;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}` +
+          `pre{margin:0;padding:24px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>` +
+          `<body><pre>${esc}</pre></body></html>`
+      }
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener,noreferrer')
