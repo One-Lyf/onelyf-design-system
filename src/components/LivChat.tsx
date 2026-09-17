@@ -2193,10 +2193,24 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
             </button>
           )}
         </div>
-        {!hat.hideHeaderTitle && (
+        {/* hideHeaderTitle drops the wordmark but KEEPS the mark, enlarged and
+            animated — for shells that already name Liv in their own app header
+            (Liv Console), where "Liv · sessions" here just says it twice. The
+            glyph clears LIV_GROW_MIN_SIZE so the thinking state actually grows
+            its roots rather than falling back to the small-size pulse. */}
+        {(!hat.hideHeaderTitle || hat.glyph) && (
           <h2 style={{ ...textStyle('h3'), margin: 0, display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0, flex: 1, justifyContent: 'center' }}>
-            {hat.glyph && <Glyph variant={hat.glyph} size={22} animated={hat.glyph === 'live' ? livGlyphState : 'none'} />}
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Liv{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
+            {hat.glyph && (
+              <Glyph
+                variant={hat.glyph}
+                size={hat.hideHeaderTitle ? 56 : 22}
+                animated={hat.glyph === 'live' ? livGlyphState : 'none'}
+                alt={hat.hideHeaderTitle ? '' : undefined}
+              />
+            )}
+            {!hat.hideHeaderTitle && (
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Liv{hat.subtitle && <span style={{ ...S.muted, marginLeft: 6 }}>· {hat.subtitle}</span>}</span>
+            )}
           </h2>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: space.sm, minWidth: 0 }}>

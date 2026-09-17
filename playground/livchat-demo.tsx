@@ -160,6 +160,18 @@ function LivChatDemo() {
     toolLabels: { save_recipe: 'Writing your recipe' },
   }
 
+  // Liv Console's shape: the shell already says "Liv Console" in its own header,
+  // so the hat hides the wordmark here and the enlarged, animated mark carries
+  // the identity instead (Jeff, 2026-09-17).
+  const consoleHat: LivHat = {
+    name: 'Liv',
+    subtitle: 'sessions',
+    glyph: 'live',
+    hideHeaderTitle: true,
+    placeholder: 'Message Liv…',
+    emptyText: 'Ask Liv anything — she remembers across your OneLyf apps.',
+  }
+
   const advisorHat: LivHat = {
     name: 'Advisor',
     subtitle: 'finance',
@@ -247,6 +259,7 @@ function LivChatDemo() {
         <ThemeToggle />
       </div>
       <div style={{ display: 'flex', gap: space.lg, flexWrap: 'wrap' }}>
+        <DemoPanel hat={consoleHat} adapter={longReplyAdapter} />
         <DemoPanel hat={commisHat} adapter={commis.adapter} queue={commis.queue} />
         <DemoPanel hat={advisorHat} adapter={advisor.adapter} queue={advisor.queue} actions={advisorActions} slashTools={advisorSlashTools} />
         <DemoPanel hat={streamHat} adapter={streamAdapter} />
