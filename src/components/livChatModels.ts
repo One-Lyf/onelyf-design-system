@@ -54,6 +54,36 @@ export const ANTHROPIC_FALLBACK_MODELS: LivModel[] = [
   { id: 'claude-haiku-4-5', label: 'Haiku 4.5 · fastest' },
 ]
 
+export const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: 'Claude',
+  mistral: 'Mistral',
+  openai: 'GPT',
+  perplexity: 'Perplexity',
+  gemini: 'Gemini',
+}
+
+export const PROVIDER_FALLBACK_MODELS: Record<string, LivModel[]> = {
+  anthropic: ANTHROPIC_FALLBACK_MODELS,
+  mistral: [
+    { id: 'mistral-large-latest', label: 'Large' },
+    { id: 'mistral-medium-latest', label: 'Medium' },
+    { id: 'mistral-small-latest', label: 'Small' },
+  ],
+  openai: [
+    { id: 'gpt-5.1', label: 'GPT-5.1' },
+    { id: 'gpt-5', label: 'GPT-5' },
+    { id: 'gpt-4.1', label: 'GPT-4.1' },
+  ],
+  perplexity: [
+    { id: 'sonar', label: 'Sonar' },
+    { id: 'sonar-pro', label: 'Sonar Pro' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  ],
+}
+
 export interface CurateOptions {
   // Override the excluded class. Defaults to Fable/Mythos.
   exclude?: RegExp

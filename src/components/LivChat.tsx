@@ -18,7 +18,7 @@ import { cssVar } from '../theme'
 import Glyph, { type GlyphVariant } from '../Glyph'
 import { shouldSendOnEnter, partialTurnToAppend, transcriptToMarkdown, transcriptToPlainText, transcriptToJSON, transcriptFilename, extractDocument, documentFilename, extractArtifact, artifactFilename, streamingArtifactPreview, extractOptions, attachmentError, linkifySegments, isSameOrigin, type LivDocument, type LivArtifact } from './livChatComposer'
 import { highlightCode, type SyntaxTokenKind } from './livChatSyntaxHighlight'
-import { curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID } from './livChatModels'
+import { curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID, PROVIDER_LABELS, PROVIDER_FALLBACK_MODELS } from './livChatModels'
 import type { LivModel } from './livChatModels'
 import { EFFORT_LEVELS, DEFAULT_EFFORT, effortIndex, effortAtIndex, MODES, DEFAULT_MODE, isEffort, isMode, VERBOSITY_OPTIONS, DEFAULT_VERBOSITY, isVerbosity, DEFAULT_COMPACT_THRESHOLD } from './livChatModes'
 import type { LivEffort, LivMode, LivVerbosity } from './livChatModes'
@@ -45,8 +45,8 @@ export interface LivMessage {
 export interface LivKeyInfo {
   hasKey: boolean
   model?: string | null
-  // Persisted reasoning-effort + autonomy-mode (when the hat opts in). Optional so existing
-  // adapters that don't track them are unaffected; the DS defaults to high / manual.
+  provider?: string | null
+  availableProviders?: string[]
   effort?: LivEffort | null
   mode?: LivMode | null
   verbosity?: LivVerbosity | null
@@ -87,8 +87,14 @@ export interface LivUsage {
 // action-cards this way, without requiring the DS to know what an action card
 // is. LivChat doesn't read `extras`; it only widens the type so the app's own
 // adapter code can consume it in its onSend hook.
+export interface LivModelSuggestion {
+  provider: string
+  model: string
+  reason: string
+}
+
 export type LivChatSendResult =
-  | { ok: true; usage?: LivUsage; extras?: unknown }
+  | { ok: true; usage?: LivUsage; extras?: unknown; modelSuggestion?: LivModelSuggestion | null }
   | { ok: false; error?: { message?: string; detail?: string }; extras?: unknown }
 
 // livchat-agentic-workflows: a turn Liv runs in the background, outliving this chat turn instead
@@ -211,7 +217,7 @@ export interface LivChatAdapter {
     get(): Promise<LivResult<LivKeyInfo>>
     // `effort` / `mode` are only sent when the hat enables those controls; adapters that don't
     // support them can ignore the fields (they stay optional on the patch).
-    set(patch: { apiKey?: string; model?: string; effort?: LivEffort; mode?: LivMode; verbosity?: LivVerbosity; autoCompact?: boolean }): Promise<LivResult<LivKeyInfo>>
+    set(patch: { apiKey?: string; model?: string; provider?: string; effort?: LivEffort; mode?: LivMode; verbosity?: LivVerbosity; autoCompact?: boolean }): Promise<LivResult<LivKeyInfo>>
     // Optional live model discovery. When present, LivChat calls this the first time the
     // Brain menu opens and populates the picker from the result — real ids + display names.
     // The host wires it to its own backend, which calls the provider's `GET /v1/models`
@@ -909,14 +915,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   const showKey = hat.enableKey !== false && !!adapter.key
   const showAttach = hat.enableAttachments !== false
 
-  // Model picker: live provider list when the host wires adapter.key.listModels (fetched the
-  // first time the Brain menu opens), else hat.models, else the bundled fallback. Curation
-  // (drop Fable/Mythos, strip vendor-persona word from labels, dedupe) is applied to whichever
-  // source wins, so the policy holds no matter which path an app is on yet.
   const [liveModels, setLiveModels] = useState<LivModel[] | null>(null)
+  const [providerInput, setProviderInput] = useState('anthropic')
   const models = useMemo(
-    () => curateLivModels(liveModels ?? hat.models ?? ANTHROPIC_FALLBACK_MODELS),
-    [liveModels, hat.models],
+    () => curateLivModels(liveModels ?? hat.models ?? PROVIDER_FALLBACK_MODELS[providerInput] ?? ANTHROPIC_FALLBACK_MODELS),
+    [liveModels, hat.models, providerInput],
   )
   // Resolves a model id's host-supplied cost hint (LivModel.costPerToken) for usageCost below —
   // see the tierFor/usageCost comment for why this matters for non-Anthropic models.
@@ -1114,6 +1117,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
   }
 
   const [keyInfo, setKeyInfo] = useState<LivKeyInfo>({ hasKey: false, model: null })
+  const [pendingSuggestion, setPendingSuggestion] = useState<LivModelSuggestion | null>(null)
   // Whether the composer's Brain popover is open. Canonical Liv-chat placement: the Brain
   // pill (model + API key + usage) lives IN the composer next to attach/mic/send, NOT in
   // the chat header — see onelyf-planning/docs/liv-chat-canon.md (Tummyful is the reference design).
@@ -1373,11 +1377,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
       const r = await adapter.key.get()
       if (r.ok) {
         setKeyInfo(r.value)
+        if (r.value.provider) setProviderInput(r.value.provider)
         if (r.value.model) setModelInput(r.value.model)
         if (isEffort(r.value.effort)) setEffortInput(r.value.effort)
         if (isMode(r.value.mode)) setModeInput(r.value.mode)
         if (isVerbosity(r.value.verbosity)) setVerbosityInput(r.value.verbosity)
         if (typeof r.value.autoCompact === 'boolean') setAutoCompact(r.value.autoCompact)
+        if (r.value.provider) setLiveModels(null)
       }
     } catch (e) { console.error('key.get failed', e) }
   }
@@ -1673,7 +1679,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
           // on the stream's `done` event). Independent of which session is open —
           // it's a running total for the console, reset by tapping the meter.
           if (res.usage) addUsage(res.usage)
-          // Hands-free: read the reply aloud (app voice, else browser TTS).
+          if (res.modelSuggestion) setPendingSuggestion(res.modelSuggestion)
           if (handsFree && !hostOwnsHandsFreeVoice && acc.trim()) speak(acc)
         } else if (!userAbortedRef.current) {
           // Suppress this branch entirely on a user-initiated Stop — the message shape can vary
@@ -2054,12 +2060,13 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
 
   async function saveKey() {
     if (!adapter.key) return
-    const patch: { apiKey?: string; model?: string } = {}
+    const patch: { apiKey?: string; model?: string; provider?: string } = {}
     if (keyInput.trim()) patch.apiKey = keyInput.trim()
     if (modelInput) patch.model = modelInput
-    if (!patch.apiKey && !patch.model) return
+    if (providerInput) patch.provider = providerInput
+    if (!patch.apiKey && !patch.model && !patch.provider) return
     const r = await adapter.key.set(patch)
-    if (r.ok) { setKeyInfo({ hasKey: r.value.hasKey, model: r.value.model }); setKeyInput(''); setMsg('Saved. Liv can reply now.') }
+    if (r.ok) { setKeyInfo({ ...r.value, provider: providerInput }); setKeyInput(''); setMsg('Saved. Liv can reply now.') }
     else setMsg(r.error?.message || 'Could not save key.')
   }
 
@@ -2499,6 +2506,32 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                 })()}
               </div>
             )}
+            {pendingSuggestion && !sending && (
+              <div style={{ background: cssVar.track, border: `1px solid ${accent}`, borderRadius: radius.md, padding: 10, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
+                <div style={{ ...textStyle('caption'), color: accent, fontWeight: 700 }}>Model suggestion</div>
+                <p style={{ ...textStyle('caption'), color: cssVar.mid, margin: 0 }}>{pendingSuggestion.reason}</p>
+                <div style={{ ...textStyle('caption'), color: cssVar.ink, fontWeight: 600 }}>
+                  {PROVIDER_LABELS[pendingSuggestion.provider] ?? pendingSuggestion.provider} · {pendingSuggestion.model}
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 12px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${accent}`, background: accent, color: cssVar.surface }}
+                    onClick={async () => {
+                      const s = pendingSuggestion!
+                      const r = await adapter.key!.set({ provider: s.provider, model: s.model })
+                      if (r.ok) {
+                        setProviderInput(s.provider)
+                        setModelInput(s.model)
+                        setKeyInfo((k) => ({ ...k, provider: s.provider, model: s.model }))
+                        setLiveModels(null)
+                        setMsg(`Switched to ${PROVIDER_LABELS[s.provider] ?? s.provider} ${s.model}.`)
+                      }
+                      setPendingSuggestion(null)
+                    }}>Switch</button>
+                  <button className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 12px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${cssVar.border}`, background: 'transparent', color: cssVar.mid }}
+                    onClick={() => setPendingSuggestion(null)}>Dismiss</button>
+                </div>
+              </div>
+            )}
             {/* Action-card stack — moved to render AFTER the streaming bubble so cards from the
                 LAST completed turn sit closest to the composer (where the user's attention is
                 after they read the reply). Only rendered when the app supplies actionQueue. */}
@@ -2697,7 +2730,7 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                         shrink/truncate instead of forcing the row to overflow the card's own
                         overflow:hidden bounds. */}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                      {keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || 'Model') : 'Add Key'}
+                      {keyInfo.hasKey ? (models.find((m) => m.id === (keyInfo.model || modelInput))?.label.split('·')[0].trim() || (PROVIDER_LABELS[providerInput] ?? 'Model')) : 'Add Key'}
                     </span>
                     <span style={{ fontSize: 9, opacity: 0.7, flexShrink: 0 }}>▾</span>
                   </button>
@@ -2758,6 +2791,26 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                           Liv replies using <strong>your own API key</strong>.
                           {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
                         </p>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Provider</span>
+                          <select className="ds-input" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+                            value={providerInput}
+                            onChange={async (e) => {
+                              const id = e.target.value
+                              setProviderInput(id)
+                              setLiveModels(null)
+                              const fallback = PROVIDER_FALLBACK_MODELS[id]
+                              if (fallback?.length) setModelInput(fallback[0].id)
+                              const r = await adapter.key!.set({ provider: id })
+                              if (r.ok) setKeyInfo((k) => ({ ...k, provider: id, hasKey: r.value?.hasKey ?? k.hasKey }))
+                              else setMsg(r.error?.message || 'Could not switch provider.')
+                            }}>
+                            {(keyInfo.availableProviders?.length
+                              ? keyInfo.availableProviders
+                              : Object.keys(PROVIDER_LABELS)
+                            ).map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] || p}</option>)}
+                          </select>
+                        </label>
                         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <span style={{ ...textStyle('caption'), color: cssVar.mid }}>API Key</span>
                           <input className="ds-input" type="password" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
