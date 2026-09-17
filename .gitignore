@@ -14,3 +14,4 @@ ds-bundle
 
 # generated review harnesses (regenerate with the scripts/ generators)
 playground/livthinking-review.html
+playground/_glyph-review.html

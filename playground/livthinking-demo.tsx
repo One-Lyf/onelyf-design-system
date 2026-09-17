@@ -12,7 +12,7 @@ import { cssVar } from '../src/theme'
 
 initTheme()
 
-const SIZES = [96, 64, 44, 32, 24]
+const SIZES = [128, 96, 64, 44, 32, 24]
 const MOTIONS: LivThinkingMotion[] = ['grow', 'illuminate']
 
 // Panels read the REAL theme tokens. An earlier cut of this faked dark ground
@@ -38,12 +38,12 @@ function Panel({ children, title }: { title: string; children: React.ReactNode }
   )
 }
 
-function Row({ motion, glyph }: { motion: LivThinkingMotion; glyph: boolean }) {
+function Row({ motion }: { motion: LivThinkingMotion }) {
   return (
     <>
       {SIZES.map(s => (
         <div key={s} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-          <LivThinking size={s} motion={motion} glyph={glyph} />
+          <LivThinking size={s} motion={motion} />
           <span style={{ fontSize: 10, color: cssVar.mid }}>{s}px</span>
         </div>
       ))}
@@ -70,8 +70,8 @@ function Demo() {
 
       {MOTIONS.map(m => (
         <div key={m}>
-          <Panel title={`${m} — with glyph`}><Row motion={m} glyph /></Panel>
-          <Panel title={`${m} — no glyph`}><Row motion={m} glyph={false} /></Panel>
+          <Panel title={`${m}`}><Row motion={m} /></Panel>
+          
         </div>
       ))}
 

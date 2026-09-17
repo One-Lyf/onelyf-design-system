@@ -1,165 +1,166 @@
 // ─── LivThinking — the Liv "thinking" loader ────────────────────────────────
-// Liv made visible while the intelligence works (brand brief §8: "thinking —
-// paths illuminate, energy gathers"; §7: "loading — energy travels the network").
-// A hyphal network grows out from the amber core and withdraws, on a loop.
+// Liv made visible while the intelligence works. The ornament holds still and
+// the mycelial roots grow outward and withdraw, on a loop.
 //
-// Why the network is drawn here instead of taken from the glyph asset:
-// `assets/glyph-live.svg` is an autotraced raster→vector polyline — one `d` of
-// 55,863 chars, 3,461 `L` commands, zero curve commands. Nothing in it can be
-// stroke-dashed, morphed or grown. The threads below are generated as clean
-// curves by `scripts/gen-hyphae.mjs`; re-run that to change the geometry.
+// Canon: onelyf-planning/docs/liv-motion-canon.md, ruling 2026-09-17 —
+// brand brief §8's "No plant-growth animation" forbids the glyph behaving like
+// a PLANT. Liv is a root/mycelial structure, so hyphal growth is Liv being
+// itself. §8 also asks for "movement beneath the surface", which is exactly
+// what the roots are; the ornament above them stays still.
 //
-// Self-contained: the CSS ships inside the component. The previous version
-// documented `liv-think` keyframes as the host app's job and those keyframes
-// existed in no app in this repo — so the spinner silently rendered as a static
-// image wherever nobody had copied them in.
+// The mark here is a clean curve redraw, not the shipped asset. The traced
+// `assets/glyph-live.svg` is one `d` of 55,863 chars, 3,461 `L` commands and
+// zero curve commands: it cannot be stroke-dashed or grown, and it collapses to
+// an amber dot below ~32 px. `scripts/gen-glyph.mjs` regenerates the geometry
+// below — it is a faithful redraw of the same rosette (vesica lobes, central
+// spine, looped finials, dendritic roots, amber core), NOT a new mark.
+//
+// Self-contained: the CSS ships inside the SVG. The previous version documented
+// `liv-think` keyframes as the host app's job, and every consuming app had to
+// hand-copy them or the spinner silently rendered static.
 import { useId } from 'react'
-import liveUrl from './assets/glyph-live.svg'
-import { cssVar } from './theme'
 
-// ── geometry, baked from scripts/gen-hyphae.mjs (seeded, so it is stable) ────
-// 7 primaries — one per OneLyf space — each with one branch, in a 100x100 box.
-const PRIMARY = [
-  "M49.84 50.09 C49.8 49.49 49.69 47.43 49.56 46.1 C49.43 44.76 49.13 42.73 48.98 41.16 C48.83 39.58 48.73 36.99 48.55 35.6 C48.37 34.2 48.09 33.25 47.78 31.87 C47.47 30.49 46.98 27.88 46.49 26.39 C46.01 24.89 45.06 23.1 44.56 21.9 C44.07 20.7 43.62 19.44 43.18 18.37 C42.74 17.31 42.14 16.13 41.61 14.78 C41.09 13.44 39.96 10.23 39.67 9.43",
-  "M50.11 50.11 C50.57 49.74 52.23 48.36 53.16 47.68 C54.09 47.01 55.23 46.28 56.29 45.6 C57.35 44.91 58.94 43.95 60.21 43.12 C61.48 42.29 63.46 41 64.77 40.07 C66.08 39.14 67.83 37.81 68.95 36.93 C70.08 36.04 71.21 34.94 72.26 34.15 C73.32 33.36 74.68 32.5 75.97 31.66 C77.26 30.83 79.36 29.43 80.85 28.57 C82.34 27.71 85.14 26.34 85.9 25.95",
-  "M49.9 49.92 C50.66 50.19 53.53 51.11 54.93 51.71 C56.33 52.31 57.85 53.34 59.21 53.96 C60.57 54.58 62.51 55.32 63.96 55.83 C65.41 56.34 67.55 56.79 68.85 57.24 C70.15 57.69 71.57 58.19 72.65 58.72 C73.73 59.25 74.96 60.13 76 60.65 C77.04 61.17 78.99 61.86 79.53 62.11 C80.06 62.35 82.51 63.6 83.9 64.28 C85.29 64.96 88.4 66.4 89.11 66.73",
-  "M50.06 50.1 C50.45 50.68 51.79 52.72 52.45 53.81 C53.11 54.9 53.73 56.19 54.34 57.28 C54.95 58.37 55.79 59.77 56.34 60.85 C56.89 61.94 57.3 63.2 57.76 64.35 C58.22 65.5 58.85 66.9 59.27 68.06 C59.69 69.22 60.03 70.59 60.4 71.72 C60.77 72.85 61.28 74.09 61.6 75.16 C61.93 76.24 62.35 77.85 62.61 78.77 C62.88 79.7 63.64 82.27 63.93 83.25",
-  "M49.94 50.13 C49.62 50.75 48.47 52.85 47.83 53.96 C47.19 55.07 46.33 56.32 45.66 57.42 C44.99 58.52 44.05 59.94 43.42 61.03 C42.79 62.13 42.31 63.34 41.72 64.45 C41.13 65.55 40.27 67.02 39.75 68.13 C39.24 69.24 38.94 70.46 38.5 71.56 C38.06 72.66 37.42 73.98 37.06 75.03 C36.7 76.09 36.35 77.62 36.09 78.52 C35.83 79.42 35.09 81.94 34.81 82.88",
-  "M50.05 49.93 C49.43 50.24 47.36 51.29 46.23 51.9 C45.1 52.51 43.87 53.26 42.8 53.87 C41.73 54.48 40.31 55.24 39.24 55.87 C38.17 56.5 36.9 57.32 35.87 57.95 C34.84 58.58 33.61 59.28 32.68 59.91 C31.76 60.54 30.9 61.34 30.02 61.93 C29.14 62.52 27.94 63.15 27.16 63.65 C26.38 64.16 24.98 65.11 24.29 65.57 C23.6 66.03 21.6 67.4 20.8 67.95",
-  "M49.86 49.92 C49.19 49.65 47 48.77 45.62 48.16 C44.25 47.55 42.68 46.75 41.44 46.14 C40.2 45.53 38.5 44.71 37.32 44.11 C36.13 43.51 34.82 42.8 33.79 42.25 C32.75 41.7 31.5 41.02 30.65 40.53 C29.8 40.05 28.86 39.44 28.1 38.98 C27.34 38.53 26.28 37.93 25.62 37.53 C24.96 37.14 23.75 36.35 23.13 35.94 C22.51 35.53 20.68 34.29 19.96 33.8",
+// ── geometry, baked from scripts/gen-glyph.mjs (deterministic, no rng) ──────
+const ORNAMENT = [
+  { c: "liv-lobe", d: "M50 44 Q62.06 32 50 20 Q37.94 32 50 44 Z" },
+  { c: "liv-lobe", d: "M56 50 Q68 62.06 80 50 Q68 37.94 56 50 Z" },
+  { c: "liv-lobe", d: "M50 56 Q37.94 68 50 80 Q62.06 68 50 56 Z" },
+  { c: "liv-lobe", d: "M44 50 Q32 37.94 20 50 Q32 62.06 44 50 Z" },
+  { c: "liv-lobe liv-lobe-sm", d: "M53.54 46.46 Q65.7 46.61 65.56 34.44 Q53.39 34.3 53.54 46.46 Z" },
+  { c: "liv-lobe liv-lobe-sm", d: "M53.54 53.54 Q53.39 65.7 65.56 65.56 Q65.7 53.39 53.54 53.54 Z" },
+  { c: "liv-lobe liv-lobe-sm", d: "M46.46 53.54 Q34.3 53.39 34.44 65.56 Q46.61 65.7 46.46 53.54 Z" },
+  { c: "liv-lobe liv-lobe-sm", d: "M46.46 46.46 Q46.61 34.3 34.44 34.44 Q34.3 46.61 46.46 46.46 Z" },
+  { c: "liv-spine", d: "M50 84 Q56.16 50 50 16 Q43.84 50 50 84 Z" },
+  { c: "liv-finial", d: "M50 14 C46.6 10.8 46.6 6 50 4.4 C53.4 6 53.4 10.8 50 14 Z" },
+  { c: "liv-finial", d: "M50 86 C46.6 89.2 46.6 94 50 95.6 C53.4 94 53.4 89.2 50 86 Z" },
 ]
-const BRANCH = [
-  "M46.47 26.41 C46.06 26.16 44.5 25.2 43.68 24.64 C42.86 24.09 42.01 23.24 41.13 22.61 C40.25 21.98 38.94 21.11 38.14 20.53 C37.34 19.95 36.19 19.09 35.6 18.66",
-  "M68.93 36.95 C69.6 36.76 72.21 36 73.4 35.6 C74.58 35.21 75.71 34.72 76.7 34.32 C77.68 33.92 78.87 33.35 79.77 32.96 C80.68 32.57 82.39 31.83 82.87 31.6",
-  "M68.83 57.26 C69.44 57.66 71.87 59.26 72.85 59.99 C73.83 60.72 74.61 61.6 75.44 62.31 C76.27 63.03 77.51 63.99 78.22 64.63 C78.93 65.28 80.11 66.44 80.53 66.86",
-  "M60.38 71.74 C60.91 71.36 63.03 69.84 63.9 69.19 C64.77 68.53 65.48 67.86 66.24 67.17 C67.01 66.48 68.19 65.53 68.83 64.9 C69.47 64.27 70.62 63.1 71.06 62.64",
-  "M38.52 71.58 C38.06 71.14 36.27 69.4 35.53 68.64 C34.79 67.88 34.29 67.14 33.65 66.4 C33 65.66 31.98 64.61 31.43 63.94 C30.88 63.27 29.83 61.96 29.44 61.45",
-  "M30 61.95 C29.52 62.32 27.62 63.79 26.82 64.44 C26.02 65.08 25.38 65.72 24.65 66.36 C23.92 67 22.83 67.86 22.2 68.45 C21.57 69.05 20.44 70.19 20.02 70.63",
-  "M28.08 39 C27.51 38.68 25.27 37.4 24.31 36.79 C23.34 36.19 22.6 35.6 21.75 35.02 C20.9 34.44 19.62 33.65 18.88 33.14 C18.14 32.63 16.78 31.64 16.29 31.28",
+const ROOTS = [
+  { c: "liv-root", d: "M47.42 56.51 Q44.31 63.88 42.41 67.42 Q40.52 70.95 38.03 74.19 Q35.55 77.43 32.27 80.14 Q28.99 82.86 24.77 84.75 T20.56 86.63" },
+  { c: "liv-root liv-fork", d: "M33.72 79.17 Q31.62 86.8 32.73 93.53" },
+  { c: "liv-root", d: "M52.58 56.51 Q55.69 63.88 57.59 67.42 Q59.48 70.95 61.97 74.19 Q64.45 77.43 67.73 80.14 Q71.01 82.86 75.23 84.75 T79.44 86.63" },
+  { c: "liv-root liv-fork", d: "M66.28 79.17 Q68.38 86.8 67.27 93.53" },
+  { c: "liv-root", d: "M44.61 54.46 Q38.94 58.9 35.87 60.81 Q32.79 62.72 29.35 64.06 Q25.9 65.4 22.02 65.86 Q18.14 66.33 13.88 65.56 T9.62 64.79" },
+  { c: "liv-root liv-fork", d: "M23.64 65.86 Q18.58 70.88 16.44 76.63" },
+  { c: "liv-root", d: "M55.39 54.46 Q61.06 58.9 64.13 60.81 Q67.21 62.72 70.65 64.06 Q74.1 65.4 77.98 65.86 Q81.86 66.33 86.12 65.56 T90.38 64.79" },
+  { c: "liv-root liv-fork", d: "M76.36 65.86 Q81.42 70.88 83.56 76.63" },
+  { c: "liv-root", d: "M43.09 51.1 Q37.14 51.88 34.12 51.97 Q31.11 52.07 28.07 51.65 Q25.03 51.23 22.02 50.07 Q19.02 48.92 16.2 46.82 T13.38 44.73" },
+  { c: "liv-root liv-fork", d: "M23.21 50.67 Q17.48 52.23 13.56 55.52" },
+  { c: "liv-root", d: "M56.91 51.1 Q62.86 51.88 65.88 51.97 Q68.89 52.07 71.93 51.65 Q74.97 51.23 77.98 50.07 Q80.98 48.92 83.8 46.82 T86.62 44.73" },
+  { c: "liv-root liv-fork", d: "M76.79 50.67 Q82.52 52.23 86.44 55.52" },
+  { c: "liv-root", d: "M50 57 Q50 63.8 50 67.2 Q50 70.6 50 74 Q50 77.4 50 80.8 Q50 84.2 50 87.6 T50 91" },
+  { c: "liv-root liv-fork", d: "M50 79.44 Q51.6 85.98 55.21 90.51" },
+  { c: "liv-root", d: "M43.76 46.82 Q39.54 44.53 37.54 43.19 Q35.54 41.86 33.73 40.2 Q31.92 38.55 30.44 36.47 Q28.95 34.4 27.94 31.85 T26.93 29.3" },
+  { c: "liv-root liv-fork", d: "M30.97 37.38 Q27.74 33.88 26.49 29.99" },
+  { c: "liv-root", d: "M56.24 46.82 Q60.46 44.53 62.46 43.19 Q64.46 41.86 66.27 40.2 Q68.08 38.55 69.56 36.47 Q71.05 34.4 72.06 31.85 T73.07 29.3" },
+  { c: "liv-root liv-fork", d: "M69.03 37.38 Q72.26 33.88 73.51 29.99" },
 ]
 
-// ── motion ──────────────────────────────────────────────────────────────────
-// 'grow'       threads extend from the core and withdraw the way they came.
-// 'illuminate' threads stay present; light travels outward along them
-//              (brand brief §8 wording, for when the network should read as
-//              already-there rather than being built each cycle).
+// 'grow'       roots extend from the core and withdraw the way they came (canon)
+// 'illuminate' roots stay present; light travels outward along them
 export type LivThinkingMotion = 'grow' | 'illuminate'
 
 const DUR = 3.2
 
-// Scoped under .liv-hy so nothing here can leak into a host app's styles.
-// An SVG <style> in inline SVG is document-scoped, so the first mounted spinner
-// styles them all and duplicate copies are harmless — no head injection, no
-// SSR hazard, and no "remember to add these keyframes" note in the docs.
+// Scoped under .liv-hy. An SVG <style> in inline SVG is document-scoped, so the
+// first mounted spinner styles them all and duplicates are harmless — no head
+// injection, no SSR hazard, nothing for a host app to remember.
 const CSS = `
 .liv-hy{overflow:visible}
-.liv-hy path{fill:none;stroke-linecap:round;stroke-linejoin:round}
-.liv-hy .liv-p{stroke-width:2.1}
-.liv-hy .liv-b{stroke-width:1.3}
+.liv-hy path{vector-effect:none}
+.liv-hy .liv-lobe,.liv-hy .liv-spine,.liv-hy .liv-finial{fill:none;stroke:var(--ds-gold,#c08a14);stroke-width:2.2;stroke-linejoin:round}
+.liv-hy .liv-lobe-sm{stroke-width:1.7;opacity:.8}
+.liv-hy .liv-spine{stroke-width:2}
+.liv-hy .liv-root{fill:none;stroke:var(--ds-gold,#c08a14);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.liv-hy .liv-fork{stroke-width:1.2}
 .liv-hy .liv-core{transform-origin:50px 50px;animation:liv-breathe ${DUR}s ease-in-out infinite}
 @keyframes liv-breathe{0%,100%{transform:scale(.92);opacity:.75}50%{transform:scale(1.06);opacity:1}}
 
-/* grow: 1 -> 0 -> 1. Never animate to a NEGATIVE offset: that slides the dash
-   off the far end, so the thread travels away instead of withdrawing. Start and
-   end are identical, so the loop wraps with no jump. */
-/* :where() keeps these at the same specificity as the .liv-hy path longhand
-   below (0,1,1). Written as .liv-hy.liv-grow they would score 0,2,1, outrank it,
-   and silently reset animation-fill-mode no matter what the source order is. */
-.liv-hy:where(.liv-grow) path{stroke-dasharray:1 1;animation:liv-grow ${DUR}s ease-in-out infinite}
+/* :where() keeps these at the same specificity (0,1,1) as the longhand block at
+   the end. Written as .liv-hy.liv-grow they would score 0,2,1, outrank it, and
+   silently reset animation-fill-mode whatever the source order. */
+.liv-hy:where(.liv-grow) :where(.liv-root){stroke-dasharray:1 1;animation:liv-grow ${DUR}s ease-in-out infinite}
+/* 1 -> 0 -> 1, never to a NEGATIVE offset: negative slides the dash off the far
+   end so the root travels away instead of withdrawing. Ends where it starts, so
+   the loop wraps with no jump. */
 @keyframes liv-grow{0%{stroke-dashoffset:1;opacity:.2}42%{stroke-dashoffset:0;opacity:1}58%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:1;opacity:.2}}
 
-.liv-hy:where(.liv-illuminate) :where(.liv-rail){opacity:.18}
-.liv-hy:where(.liv-illuminate) :where(.liv-spark){stroke-dasharray:.18 .82;animation:liv-travel ${DUR}s linear infinite}
+.liv-hy:where(.liv-illuminate) :where(.liv-root){opacity:.2}
+.liv-hy:where(.liv-illuminate) :where(.liv-spark){opacity:1;stroke-dasharray:.2 .8;animation:liv-travel ${DUR}s linear infinite}
 @keyframes liv-travel{0%{stroke-dashoffset:1;opacity:0}15%{opacity:1}85%{opacity:1}100%{stroke-dashoffset:0;opacity:0}}
 
-/* Must come after the shorthands above: \`animation:\` resets both of these.
+/* Must come last: every \`animation:\` shorthand above resets both of these.
    fill-mode:both is load-bearing — during a positive stagger delay an unfilled
    path renders its BASE stroke-dashoffset of 0, i.e. fully drawn, so the whole
-   network flashes complete for the first frames after mount. */
-.liv-hy path,.liv-hy .liv-core{animation-delay:var(--liv-d,0s);animation-fill-mode:both}
+   root system flashes complete for the first frames after mount. */
+.liv-hy path{animation-delay:var(--liv-d,0s);animation-fill-mode:both}
 
 /* Degrades to a recognisable STATIC form, per brand brief §8. */
 @media (prefers-reduced-motion:reduce){
   .liv-hy path,.liv-hy .liv-core{animation:none!important}
-  .liv-hy path{stroke-dashoffset:0;opacity:.55}
+  .liv-hy .liv-root{stroke-dashoffset:0;opacity:.6}
+  .liv-hy .liv-spark{display:none}
   .liv-hy .liv-core{opacity:1;transform:none}
 }`
 
 export interface LivThinkingProps {
-  /** Glyph size in px. */
+  /** Mark size in px. */
   size?: number
   /** Optional caption shown beside the mark (e.g. "Liv is thinking…"). */
   caption?: string
   /** Accessible status label (announced to screen readers). */
   label?: string
-  /** How the network animates. Defaults to `grow`. */
+  /** How the root network animates. Defaults to `grow` (canon). */
   motion?: LivThinkingMotion
-  /** Lay the canonical traced glyph over the network. Defaults to true. */
-  glyph?: boolean
 }
 
 export default function LivThinking({
-  size = 44,
+  size = 64,
   caption,
   label = 'Liv is thinking…',
   motion = 'grow',
-  glyph = true,
 }: LivThinkingProps) {
-  // unique per instance so multiple spinners cannot share a gradient id
-  const uid = useId().replace(/:/g, '')
-  const gradId = `liv-glow-${uid}`
+  // unique per instance so two spinners cannot share a gradient id
+  const gradId = `liv-glow-${useId().replace(/:/g, '')}`
+  const spark = motion === 'illuminate'
 
   // Small stagger so the network wakes outward rather than all at once. Larger
-  // values pull the threads far enough out of step that the loop stops reading
-  // as one gesture.
-  const stroke = (d: string, i: number, tier: 'p' | 'b', extra = '') => (
+  // values pull the roots far enough out of step that the loop stops reading as
+  // one gesture.
+  const root = (p: { c: string; d: string }, i: number, extra = '') => (
     <path
-      key={`${tier}${i}${extra}`}
-      className={`liv-${tier}${extra ? ' ' + extra : ''}`}
-      d={d}
+      key={`${i}${extra}`}
+      className={extra ? `${p.c} ${extra}` : p.c}
+      d={p.d}
       pathLength={1}
-      style={{ ['--liv-d' as string]: `${((tier === 'b' ? 0.1 : 0) + (i % 7) * 0.03).toFixed(3)}s` }}
+      style={{ ['--liv-d' as string]: `${(i * 0.02).toFixed(2)}s` }}
     />
   )
 
-  const rails = motion === 'illuminate'
   return (
     <span role="status" aria-label={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 11 }}>
-      <span style={{ position: 'relative', width: size, height: size, flex: '0 0 auto', display: 'block' }}>
-        <svg
-          className={`liv-hy liv-${motion}`}
-          viewBox="0 0 100 100"
-          aria-hidden="true"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', stroke: cssVar.gold }}
-        >
-          <defs>
-            <style>{CSS}</style>
-            <radialGradient id={gradId} gradientUnits="userSpaceOnUse" cx="50" cy="50" r="15">
-              <stop offset="0%" stopColor="#fffaf0" />
-              <stop offset="24%" stopColor="#ffd35e" stopOpacity="0.92" />
-              <stop offset="55%" stopColor="#e89a1c" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="var(--ds-gold, #c08a14)" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-          {PRIMARY.map((d, i) => stroke(d, i, 'p', rails ? 'liv-rail' : ''))}
-          {BRANCH.map((d, i) => stroke(d, i, 'b', rails ? 'liv-rail' : ''))}
-          {rails && PRIMARY.map((d, i) => stroke(d, i, 'p', 'liv-spark'))}
-          {rails && BRANCH.map((d, i) => stroke(d, i, 'b', 'liv-spark'))}
-          <circle className="liv-core" cx="50" cy="50" r="15" fill={`url(#${gradId})`} stroke="none" />
-        </svg>
-        {glyph && (
-          <img
-            src={liveUrl}
-            alt=""
-            aria-hidden="true"
-            style={{
-              position: 'absolute', left: '50%', top: '50%', width: '33%',
-              transform: 'translate(-50%, -52%)', display: 'block', objectFit: 'contain',
-            }}
-          />
-        )}
-      </span>
-      {caption && <span style={{ fontSize: 13, color: cssVar.mid }}>{caption}</span>}
+      <svg
+        className={`liv-hy liv-${motion}`}
+        viewBox="0 0 100 100"
+        width={size}
+        height={size}
+        aria-hidden="true"
+        style={{ display: 'block', flex: '0 0 auto' }}
+      >
+        <defs>
+          <style>{CSS}</style>
+          <radialGradient id={gradId} gradientUnits="userSpaceOnUse" cx="50" cy="50" r="19">
+            <stop offset="0%" stopColor="#fffaf0" />
+            <stop offset="24%" stopColor="#ffd35e" stopOpacity="0.95" />
+            <stop offset="52%" stopColor="#e89a1c" stopOpacity="0.62" />
+            <stop offset="100%" stopColor="var(--ds-gold, #c08a14)" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        {ROOTS.map((p, i) => root(p, i))}
+        {spark && ROOTS.map((p, i) => root(p, i, 'liv-spark'))}
+        <circle className="liv-core" cx="50" cy="50" r="19" fill={`url(#${gradId})`} />
+        {ORNAMENT.map((p, i) => <path key={`o${i}`} className={p.c} d={p.d} />)}
+      </svg>
+      {caption && <span style={{ fontSize: 13, color: 'var(--ds-mid, #5e6c60)' }}>{caption}</span>}
     </span>
   )
 }
