@@ -9,7 +9,10 @@
 //   variant="rooted"   → "Rooted Connection" brand-board variant (Section B.5):
 //                        same crown knot and junction as live, roots extending
 //                        into a fuller mycelium cascade. Used for the Liv
-//                        Console v1 app icon, not a chat-time state.
+//                        Console v1 app icon — AND, since 2026-09-17, as the
+//                        artwork the THINKING state animates: `live` has only
+//                        short root stubs, so there is nothing deep to grow.
+//                        See onelyf-planning/docs/liv-motion-canon.md.
 //
 // VECTOR marks, traced from the approved GPT brand board (crisp at any size;
 // every tendril tapers to a point, north petal closes as a knot loop). live's

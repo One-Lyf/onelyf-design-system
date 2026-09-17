@@ -21,6 +21,14 @@
 //   GROWING  an ellipse anchored AT THE ROOT ORIGIN (274, 420) and scaled from
 //            nothing, so the dendrils extend down and outward, then withdraw.
 //
+// WHICH ARTWORK (Jeff, 2026-09-17): "I want the root growth to continue deeper
+// like in the newer glyph that is used for the Liv Builder PWA icon."
+// That is the ROOTED variant — same crown and junction as live, but the roots
+// continue into a full mycelium cascade instead of stopping at short stubs.
+// live simply has no deep roots to grow, so the thinking state draws `rooted`.
+// At phase 0 the cascade is masked away and what remains reads almost exactly
+// like `live`, so the idle -> thinking handoff is close to seamless.
+//
 // The growing edge is displaced by feTurbulence, which is the difference
 // between "mycelium creeping outward" and "a clock hand wiping". Verified side
 // by side; the plain-edged version reads as a wipe and was rejected.
@@ -34,7 +42,7 @@
 // The asset is imported directly rather than via Glyph's GLYPH_URLS: Glyph
 // renders this component, so reading back from it would be a circular import.
 import { useId } from 'react'
-import liveUrl from './assets/glyph-live.svg'
+import rootedUrl from './assets/glyph-rooted.svg'
 
 /** Below this rendered size the traced glyph is mud; use the simplified mark. */
 export const LIV_GROW_MIN_SIZE = 48
@@ -47,11 +55,15 @@ const CROWN_BOTTOM = 435
 // Covers the core's radial glow (r=149 in the asset) so the crown rect cannot
 // slice it into a hard horizontal edge.
 const CORE_COVER_R = 168
-// Where the dendrils leave the core, and how far they reach.
+// Where the dendrils leave the core, and how far they reach. RY spans the
+// ellipse from ROOT_ORIGIN_Y down to ROOT_ORIGIN_Y + 2*RY, so 210 carries the
+// cascade past the bottom of the 748-tall artwork — the roots run all the way
+// down rather than stopping mid-frame.
 const ROOT_ORIGIN_Y = 420
-const ROOT_RX = 310, ROOT_RY = 130
+const ROOT_RX = 340, ROOT_RY = 210
 
-const DUR = 3.2
+// Slower than the short-root version: there is visibly more cascade to travel.
+const DUR = 3.6
 
 export const livGlyphGrowStylesheet = `
 .lg-grow .lg-roots{
@@ -63,7 +75,7 @@ export const livGlyphGrowStylesheet = `
    full across the middle so the complete mark is legible, not just glimpsed. */
 @keyframes lg-grow{
   0%{transform:scale(.01)}
-  44%{transform:scale(1)}
+  46%{transform:scale(1)}
   58%{transform:scale(1)}
   100%{transform:scale(.01)}
 }
@@ -97,14 +109,14 @@ export default function LivGlyphGrow({ size = 64, alt = '' }: LivGlyphGrowProps)
     >
       <defs>
         <filter id={filterId} x="-60%" y="-60%" width="220%" height="220%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.016" numOctaves="4" seed="11" result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="70" xChannelSelector="R" yChannelSelector="G" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="4" seed="11" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="80" xChannelSelector="R" yChannelSelector="G" />
         </filter>
         {/* maskUnits/bounds are explicit so the displaced edge is not clipped
             by the default objectBoundingBox region. */}
-        <mask id={maskId} maskUnits="userSpaceOnUse" x={-250} y={-250} width={VB_W + 500} height={VB_H + 500}>
+        <mask id={maskId} maskUnits="userSpaceOnUse" x={-300} y={-300} width={VB_W + 600} height={VB_H + 600}>
           {/* static: the crown never moves */}
-          <rect x={-250} y={-250} width={VB_W + 500} height={250 + CROWN_BOTTOM} fill="#fff" />
+          <rect x={-300} y={-300} width={VB_W + 600} height={300 + CROWN_BOTTOM} fill="#fff" />
           <circle cx={CORE_X} cy={CORE_Y} r={CORE_COVER_R} fill="#fff" />
           {/* growing: the dendrils, out and down from the root origin */}
           <ellipse
@@ -119,7 +131,7 @@ export default function LivGlyphGrow({ size = 64, alt = '' }: LivGlyphGrowProps)
         </mask>
       </defs>
       <image
-        href={liveUrl}
+        href={rootedUrl}
         x="0"
         y="0"
         width={VB_W}
