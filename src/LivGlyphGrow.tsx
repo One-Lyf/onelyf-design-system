@@ -4,12 +4,26 @@
 //
 // The traced asset cannot be stroke-dashed — it is a filled OUTLINE of the
 // strands (one `d` of 55,863 chars, 3,461 `L` commands, zero curves), with no
-// centrelines to draw along. So it is revealed by an animated MASK instead:
-// a circle centred on the amber core, scaled from nothing out to full and back.
+// centrelines to draw along. So it is revealed by an animated MASK instead.
 //
-// The mask edge is displaced by feTurbulence, which is the difference between
-// "mycelium creeping outward" and "a clock hand wiping". Verified side by side;
-// the plain circular mask reads as a wipe and was rejected.
+// WHAT GROWS, AND WHY IT MATTERS (Jeff, 2026-09-17): "You keep making the crown
+// radial grow, which is more plant like than root like. The roots/dendrils
+// should be what's growing out and down, not the crown growing up."
+// An earlier cut scaled one circle from the core, which revealed the CROWN
+// outward and upward — a plant sprouting, the exact thing brand brief §8
+// forbids. The crown is the above-ground part and must never move.
+//
+// So the mask has two halves:
+//   STATIC   a rect over everything above y=435 (the knot and the lateral
+//            petals, measured off a gridded render) plus a circle over the
+//            amber core. The circle is what stops the core's r=149 glow being
+//            sliced by the rect edge, which showed as a hard horizontal cut.
+//   GROWING  an ellipse anchored AT THE ROOT ORIGIN (274, 420) and scaled from
+//            nothing, so the dendrils extend down and outward, then withdraw.
+//
+// The growing edge is displaced by feTurbulence, which is the difference
+// between "mycelium creeping outward" and "a clock hand wiping". Verified side
+// by side; the plain-edged version reads as a wipe and was rejected.
 //
 // transform:scale() drives it rather than animating the circle's `r`, because
 // `r`-as-a-CSS-property has patchier support and transform is GPU-cheap. This
@@ -25,32 +39,37 @@ import liveUrl from './assets/glyph-live.svg'
 /** Below this rendered size the traced glyph is mud; use the simplified mark. */
 export const LIV_GROW_MIN_SIZE = 48
 
-// Native geometry of the traced assets, and the amber core's position in it.
+// Native geometry of the traced assets, measured off a gridded render.
 const VB_W = 549, VB_H = 748
 const CORE_X = 274, CORE_Y = 443
-// Reaches the furthest corner of the artwork from the core, so scale(1) is a
-// complete reveal: the top finial is the far point at ~443 units.
-const MASK_R = 470
+// Everything above this is crown (knot + lateral petals) and is always visible.
+const CROWN_BOTTOM = 435
+// Covers the core's radial glow (r=149 in the asset) so the crown rect cannot
+// slice it into a hard horizontal edge.
+const CORE_COVER_R = 168
+// Where the dendrils leave the core, and how far they reach.
+const ROOT_ORIGIN_Y = 420
+const ROOT_RX = 310, ROOT_RY = 130
 
 const DUR = 3.2
 
 export const livGlyphGrowStylesheet = `
-.lg-grow .lg-mask-c{
-  transform-origin:${CORE_X}px ${CORE_Y}px;
+.lg-grow .lg-roots{
+  transform-origin:${CORE_X}px ${ROOT_ORIGIN_Y}px;
   animation:lg-grow ${DUR}s ease-in-out infinite;
   animation-fill-mode:both;
 }
 /* Starts and ends at the same scale, so the loop wraps with no jump. Holds at
    full across the middle so the complete mark is legible, not just glimpsed. */
 @keyframes lg-grow{
-  0%{transform:scale(.02)}
+  0%{transform:scale(.01)}
   44%{transform:scale(1)}
   58%{transform:scale(1)}
-  100%{transform:scale(.02)}
+  100%{transform:scale(.01)}
 }
 /* Degrades to the complete STATIC mark, per brand brief §8. */
 @media (prefers-reduced-motion:reduce){
-  .lg-grow .lg-mask-c{animation:none!important;transform:none}
+  .lg-grow .lg-roots{animation:none!important;transform:none}
 }
 `
 
@@ -77,18 +96,23 @@ export default function LivGlyphGrow({ size = 64, alt = '' }: LivGlyphGrowProps)
       style={{ display: 'block', overflow: 'visible' }}
     >
       <defs>
-        <filter id={filterId} x="-40%" y="-40%" width="180%" height="180%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="4" seed="7" result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="150" xChannelSelector="R" yChannelSelector="G" />
+        <filter id={filterId} x="-60%" y="-60%" width="220%" height="220%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.016" numOctaves="4" seed="11" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="70" xChannelSelector="R" yChannelSelector="G" />
         </filter>
-        {/* maskUnits//bounds are explicit so the displaced edge is not clipped
+        {/* maskUnits/bounds are explicit so the displaced edge is not clipped
             by the default objectBoundingBox region. */}
-        <mask id={maskId} maskUnits="userSpaceOnUse" x={-200} y={-200} width={VB_W + 400} height={VB_H + 400}>
-          <circle
-            className="lg-mask-c"
+        <mask id={maskId} maskUnits="userSpaceOnUse" x={-250} y={-250} width={VB_W + 500} height={VB_H + 500}>
+          {/* static: the crown never moves */}
+          <rect x={-250} y={-250} width={VB_W + 500} height={250 + CROWN_BOTTOM} fill="#fff" />
+          <circle cx={CORE_X} cy={CORE_Y} r={CORE_COVER_R} fill="#fff" />
+          {/* growing: the dendrils, out and down from the root origin */}
+          <ellipse
+            className="lg-roots"
             cx={CORE_X}
-            cy={CORE_Y}
-            r={MASK_R}
+            cy={ROOT_ORIGIN_Y + ROOT_RY}
+            rx={ROOT_RX}
+            ry={ROOT_RY}
             fill="#fff"
             filter={`url(#${filterId})`}
           />
