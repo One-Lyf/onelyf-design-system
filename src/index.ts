@@ -49,6 +49,7 @@ export {
 
 // Brand mark
 export { default as Glyph, GLYPH_URLS, type GlyphProps, type GlyphVariant } from './Glyph'
+export { default as LivGlyphGrow, LIV_GROW_MIN_SIZE, livGlyphGrowStylesheet, type LivGlyphGrowProps } from './LivGlyphGrow'
 export { default as LivThinking, type LivThinkingProps } from './LivThinking'
 
 // Components

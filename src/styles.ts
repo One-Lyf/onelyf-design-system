@@ -12,9 +12,17 @@
 // :focus-visible (not :focus) so keyboard users get the ring without it firing
 // on every mouse click.
 
+// The Liv glyph's grow/retract keyframes ride along here rather than in
+// livChatStylesheet: <Glyph animated="thinking"> is now used outside LivChat
+// too, and a keyframe an app forgot to inject is exactly how the old
+// LivThinking shipped as a static image for months.
+import { livGlyphGrowStylesheet } from './LivGlyphGrow'
+
 const VAR = '--ds-'
 
 export const componentStylesheet = `
+${livGlyphGrowStylesheet}
+
 /* Shared, obvious keyboard focus ring — one treatment for every control. */
 .ds-focusable:focus-visible,
 .ds-btn:focus-visible,

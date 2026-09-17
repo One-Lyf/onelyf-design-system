@@ -20,6 +20,7 @@ import crestUrl from './assets/glyph-crest.svg'
 import liveUrl from './assets/glyph-live.svg'
 import essenceUrl from './assets/glyph-essence.svg'
 import rootedUrl from './assets/glyph-rooted.svg'
+import LivGlyphGrow, { LIV_GROW_MIN_SIZE } from './LivGlyphGrow'
 
 export type GlyphVariant = 'crest' | 'live' | 'essence' | 'rooted'
 
@@ -56,6 +57,15 @@ export interface GlyphProps {
 }
 
 export default function Glyph({ variant = 'crest', size = 96, alt, animated = 'none' }: GlyphProps) {
+  // Thinking, on the live mark, at a size the traced artwork survives: grow and
+  // retract the REAL interlaced glyph via an animated mask (Jeff, 2026-09-17 —
+  // "I want the actual interlaced glyph to grow and retract when thinking in Liv
+  // Chat surfaces"). Below LIV_GROW_MIN_SIZE the trace is an amber blob at every
+  // phase, measured, so the img + CSS pulse stays there — growth you cannot see
+  // is only cost. Every other state and variant is byte-for-byte unchanged.
+  if (animated === 'thinking' && variant === 'live' && size >= LIV_GROW_MIN_SIZE) {
+    return <LivGlyphGrow size={size} alt={alt ?? ''} />
+  }
   const src = URLS[variant] ?? URLS.crest
   return (
     <img

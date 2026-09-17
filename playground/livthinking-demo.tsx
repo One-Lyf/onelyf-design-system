@@ -6,7 +6,7 @@
 // View via `npm run dev` → /playground/livthinking-demo.html.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { themeStylesheet, componentStylesheet, initTheme, LivThinking } from '../src'
+import { themeStylesheet, componentStylesheet, initTheme, LivThinking, Glyph } from '../src'
 import type { LivThinkingMotion } from '../src/LivThinking'
 import { cssVar } from '../src/theme'
 
@@ -77,6 +77,23 @@ function Demo() {
 
       <Panel title="in context — caption, the way an app actually uses it">
         <LivThinking caption="Liv is thinking…" />
+      </Panel>
+
+      {/* The REAL code path LivChat uses: <Glyph variant="live" animated={livGlyphState} />.
+          At/above LIV_GROW_MIN_SIZE this routes to the masked growth of the actual
+          interlaced glyph; below it, the img + pulse. LivChat renders 14 / 22 / 64 / 120. */}
+      <Panel title="Glyph animated='thinking' — the exact call LivChat makes">
+        {[120, 64, 48, 44, 22, 14].map(s => (
+          <div key={s} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <Glyph variant="live" size={s} animated="thinking" alt="" />
+            <span style={{ fontSize: 10, color: cssVar.mid }}>{s}px</span>
+          </div>
+        ))}
+      </Panel>
+      <Panel title="Glyph animated='idle' / 'running' — unchanged paths">
+        <Glyph variant="live" size={64} animated="idle" alt="" />
+        <Glyph variant="live" size={64} animated="running" alt="" />
+        <Glyph variant="crest" size={64} alt="" />
       </Panel>
     </div>
   )
