@@ -786,7 +786,7 @@ export const livChatStylesheet = `
    (min 0 so it can shrink). Without it the row is auto (child min-content), and the
    rail collapses to 0 because its own overflow-y:auto reports 0 min-content. */
 .lc-body { display: grid; grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); gap: 0; transition: grid-template-columns .18s ease; }
-.lc-body[data-rail-open="true"] { grid-template-columns: minmax(200px, 260px) 1fr; gap: 12px; }
+.lc-body[data-rail-open="true"] { grid-template-columns: minmax(200px, 260px) 1fr; gap: 12px; min-height: 0; }
 .lc-rail {
   overflow-y: auto;
   background: var(--ds-surface); border: 1px solid var(--ds-border-bright);
@@ -798,6 +798,7 @@ export const livChatStylesheet = `
 @media (max-width: 620px) {
   .lc-body[data-rail-open="true"] { grid-template-columns: 1fr; }
   .lc-body[data-rail-open="true"] .lc-main { display: none; }
+  .lc-body[data-rail-open="true"] .lc-rail { max-height: 100%; overflow-y: auto; }
 }
 /* Full-screen (maximize) dock state. position:fixed + inset:0 lift the card out of any host /
    LivDock box to cover the viewport — no host change needed. The z-index sits above the composer's
