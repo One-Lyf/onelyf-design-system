@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 // Animated PIXEL-ART Liv mascot for the terminal — the simplified glyph, roots
 // growing and retracting.
 //
@@ -180,7 +181,11 @@ export function toAnsi(grid, palette = PALETTE) {
 
 export const ansiFrames = pixelFrames.map(f => toAnsi(f))
 
-if (process.argv[1] && process.argv[1].endsWith('gen-glyph-pixel.mjs')) {
+// Filename-agnostic main-module check. Matching on the filename meant a renamed
+// or copied script silently produced NO output at all — it imported fine and
+// then did nothing, which looks identical to a broken install.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
   const a = process.argv
   if (a.includes('--json')) {
     console.log(JSON.stringify({ w: W, h: H, palette: PALETTE, paletteDark: PALETTE_DARK, frames: pixelFrames }))
