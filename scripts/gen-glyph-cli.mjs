@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url'
 // Terminal frames of the Liv mark: static crown, roots spreading fractally.
 //
 //   node scripts/gen-glyph-cli.mjs            # preview all frames
@@ -126,7 +127,11 @@ export const inlineFrames = [
   ...Array.from({ length: INLINE_REACH - 1 }, (_, i) => inlineFrame(1 - (i + 1) / INLINE_REACH)),
 ]
 
-if (process.argv[1] && process.argv[1].endsWith('gen-glyph-cli.mjs')) {
+// Filename-agnostic main-module check. Matching on the filename meant a renamed
+// or copied script silently produced NO output at all — it imported fine and
+// then did nothing, which looks identical to a broken install.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify({ cols: COLS, rows: ROWS, frames, inlineCols: INLINE_COLS, inlineFrames }, null, 2))
   } else {
