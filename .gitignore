@@ -16,6 +16,8 @@ ds-bundle
 playground/livthinking-review.html
 playground/_glyph-review.html
 
+playground/_pixel-preview.html
+
 # OneLyf shared ignore standard (refactor W1)
 .claude/worktrees/
 supabase/.temp/
