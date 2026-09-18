@@ -61,12 +61,32 @@ function lobe(angle, r0, r1, w, n = 40) {
 
 // Crown: four cardinal lobes, four diagonals, spine, top finial. Static.
 const CROWN = []
-// FOUR lobes, not eight: eight at 24px leaves no gap between them and the
-// rosette fills in solid. Pixel art is deliberate reduction, not shrinking.
-for (let k = 0; k < 4; k++) CROWN.push(...lobe(-Math.PI / 2 + (k / 4) * Math.PI * 2, 2.5, 8, 3))
+// Flanking lobes are ROUND (east, west, south). The north lobe is deliberately
+// absent — a fourth round lobe up there made the crown read as just another
+// radius, which is what Jeff called "overly rounded radii that flank the crown".
+for (const a of [0, Math.PI / 2, Math.PI]) CROWN.push(...lobe(a, 2.5, 7.5, 3))
 // Spine kept very narrow — at w=1.4 it filled as a solid bar straight through
 // the mark instead of reading as an axis.
-CROWN.push(...lobe(-Math.PI / 2, -7.5, 9, 0.55))
+CROWN.push(...lobe(-Math.PI / 2, -7, 6, 0.55))
+
+// The CROWN POINT: an explicit taper, not a lobe. It rises above the flanking
+// lobes and narrows to a single pixel, so the silhouette reads pointed rather
+// than round. Drawn as pixels because at 24px a curve-derived taper rounds off
+// in the raster and loses the point entirely.
+const SPIRE = []
+{
+  const apexY = 0, baseY = 7          // flanking lobes top out around y=2
+  for (let y = baseY; y >= apexY; y--) {
+    const t = (baseY - y) / (baseY - apexY)
+    const halfW = Math.max(0, Math.round((1 - t) * 2.2))
+    // Math.round(CX), not CX: the canvas is an even 24 wide, so CX is 11.5 and
+    // every spire pixel landed on x.5 — a 0.4-radius stamp around a half
+    // coordinate covers NO integer pixel, so the whole spire rasterised to
+    // nothing and the crown silently kept its old flat top.
+    for (let dx = -halfW; dx <= halfW; dx++) SPIRE.push([Math.round(CX) + dx, y])
+  }
+}
+CROWN.push(...SPIRE)
 
 // Roots: branching, downward-biased, ordered by distance so growth reveals them
 // tip-last. Width comes from run length, same as the line-art version.
@@ -160,8 +180,38 @@ export const pixelFrames = dedupe([
 ])
 
 // ── terminal output ─────────────────────────────────────────────────────────
-const fg = c => `\x1b[38;2;${parseInt(c.slice(1, 3), 16)};${parseInt(c.slice(3, 5), 16)};${parseInt(c.slice(5, 7), 16)}m`
-const bg = c => `\x1b[48;2;${parseInt(c.slice(1, 3), 16)};${parseInt(c.slice(3, 5), 16)};${parseInt(c.slice(5, 7), 16)}m`
+// COLOUR MODE. 256 is the DEFAULT, not a fallback: macOS Terminal.app — Jeff's
+// terminal — has no truecolor support at all, and a 24-bit escape there gets
+// misparsed into arbitrary palette entries. He saw grey and green instead of
+// gold. Truecolor is used only when the terminal actually advertises it.
+const TRUECOLOR = /^(truecolor|24bit)$/i.test(process.env.COLORTERM || '')
+  || process.argv.includes('--truecolor')
+
+const rgb = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16))
+
+// Nearest xterm-256 index: the 6x6x6 colour cube (16-231) or the grey ramp
+// (232-255), whichever is closer.
+function xterm256(hex) {
+  const [r, g, b] = rgb(hex)
+  const q = v => { const L = [0, 95, 135, 175, 215, 255]; let bi = 0
+    for (let i = 1; i < 6; i++) if (Math.abs(L[i] - v) < Math.abs(L[bi] - v)) bi = i
+    return bi }
+  const ci = [q(r), q(g), q(b)]
+  const L = [0, 95, 135, 175, 215, 255]
+  const cubeErr = Math.hypot(L[ci[0]] - r, L[ci[1]] - g, L[ci[2]] - b)
+  const cube = 16 + 36 * ci[0] + 6 * ci[1] + ci[2]
+  const gi = Math.max(0, Math.min(23, Math.round((((r + g + b) / 3) - 8) / 10)))
+  const gv = 8 + gi * 10
+  const greyErr = Math.hypot(gv - r, gv - g, gv - b)
+  return greyErr < cubeErr ? 232 + gi : cube
+}
+
+const fg = c => TRUECOLOR
+  ? `\x1b[38;2;${rgb(c).join(';')}m`
+  : `\x1b[38;5;${xterm256(c)}m`
+const bg = c => TRUECOLOR
+  ? `\x1b[48;2;${rgb(c).join(';')}m`
+  : `\x1b[48;5;${xterm256(c)}m`
 const RESET = '\x1b[0m'
 
 /** Render a pixel grid as half-block rows: one cell = two vertical pixels. */
