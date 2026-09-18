@@ -794,6 +794,7 @@ export const livChatStylesheet = `
   box-shadow: var(--ds-shadow-card);
   animation: lc-fade-in .14s ease;
   min-width: 0;
+  height: 100%;
 }
 @media (max-width: 620px) {
   .lc-body[data-rail-open="true"] { grid-template-columns: 1fr; }
