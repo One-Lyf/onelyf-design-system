@@ -245,6 +245,11 @@ export interface LivChatAdapter {
 export interface LivChatProps {
   hat: LivHat
   adapter: LivChatAdapter
+  // Bump (any new value) whenever the host saves/changes the API key OUTSIDE this instance
+  // (e.g. liv-console's LivBrain tab) so the Brain pill/sheet re-reads adapter.key.get() instead
+  // of showing stale "Add Key" from its one-time mount fetch. Omit for hosts where LivChat's own
+  // Brain sheet is the only place a key is ever set.
+  keyNonce?: number | string
   // Optional: report chat state up to a host that keeps this instance mounted across navigation
   // (e.g. a persistent LivDock/bubble) — it drives the launcher's unread dot + thinking pulse.
   // Omitted by inline hosts that don't need it.
@@ -912,7 +917,7 @@ interface SpeechRec {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function LivChat({ hat, adapter, onState, onMinimize, onClose, dock = 'panel', onMaximize, onRestore, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, slashTools, onToolInvoke, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
+export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, onClose, dock = 'panel', onMaximize, onRestore, pendingRequest, onPendingRequestConsumed, onMessagesChange, actionQueue, actions, slashTools, onToolInvoke, onHandsFreeChange, hostOwnsHandsFreeVoice, tier, onTierChange }: LivChatProps) {
   const accent = hat.accent || cssVar.primary
   const showKey = hat.enableKey !== false && !!adapter.key
   const showAttach = hat.enableAttachments !== false
@@ -1390,7 +1395,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     } catch (e) { console.error('key.get failed', e) }
   }
 
-  useEffect(() => { loadSessions(true); loadKey() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadSessions(true) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-reads on mount and whenever the host bumps keyNonce (a key saved elsewhere, e.g.
+  // liv-console's LivBrain tab) — otherwise the pill is stuck on this instance's first fetch.
+  useEffect(() => { loadKey() }, [keyNonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live model discovery: the first time the Brain menu opens, ask the host's backend for the
   // real provider model list (adapter.key.listModels → provider GET /v1/models). Lazy (only on
@@ -2036,6 +2045,15 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
   }
+
+  // Escape dismisses the Brain sheet same as the scrim/Close button. Scoped to when it's open —
+  // otherwise Escape would fight the rename/slash-menu Escape handlers elsewhere in this file.
+  useEffect(() => {
+    if (!brainOpen) return
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setBrainOpen(false) } }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [brainOpen])
 
   const SHEET_DISMISS_THRESHOLD_PX = 80
 
@@ -2788,7 +2806,11 @@ export default function LivChat({ hat, adapter, onState, onMinimize, onClose, do
                     <div className="lc-sheet-handle" aria-hidden="true"
                       onPointerDown={onBrainSheetHandlePointerDown}
                       style={{ cursor: 'grab', touchAction: 'none' }} />
-                    <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ ...textStyle('overline'), color: accent, fontWeight: 700 }}>Brain</div>
+                      <button type="button" className="lc-iconbtn" style={S.iconbtn} onClick={() => setBrainOpen(false)}
+                        title="Close" aria-label="Close Brain settings"><CloseI /></button>
+                    </div>
                         <p style={{ ...S.muted, margin: 0 }}>
                           Liv replies using <strong>your own API key</strong>.
                           {keyInfo.hasKey ? ' A key is set.' : ' No key yet.'}
