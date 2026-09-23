@@ -42,8 +42,20 @@ import { color, spaces, Glyph, Button, JunctionCard, SpaceNode } from 'onelyf-de
 
 ```sh
 npm install
+npm run dev        # playground (playground/*.html) on the Vite dev server
+npm test           # node --test (component logic: LivChat composer/models/modes, tile reorder)
 npm run build      # tsc -b && vite build (library mode)
 ```
+
+No env vars: the library reads none, so there is no `.env.example`.
+
+## Release
+
+There is no registry publish. Consumers pin a commit:
+`"onelyf-design-system": "github:One-Lyf/onelyf-design-system#<sha>"`, and `prepare` builds
+`dist/` on install. Ship a change by merging to `main`, then re-pin each consumer (tummyful,
+liv-console/console, federation marketplace, cash-stash, rackwave) and verify with a real
+`vite build`, not just `tsc`. Repo conventions: `citadel/docs/architecture/repo-conventions.md`.
 
 ## Sync to Claude Design
 

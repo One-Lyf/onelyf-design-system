@@ -21,3 +21,6 @@ playground/_pixel-preview.html
 # OneLyf shared ignore standard (refactor W1)
 .claude/worktrees/
 supabase/.temp/
+.env
+.env.*
+!.env.example
