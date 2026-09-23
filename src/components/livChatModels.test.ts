@@ -7,7 +7,25 @@ import {
   ANTHROPIC_FALLBACK_MODELS,
   ANTHROPIC_FALLBACK_MODEL_ID,
   DEFAULT_MODEL_EXCLUDE,
+  PROVIDER_LABELS,
+  providerLabel,
+  PROVIDER_FALLBACK_MODELS,
 } from './livChatModels.ts'
+
+test('provider labels are real vendor names, never assistant/model-family brands', () => {
+  assert.deepEqual(PROVIDER_LABELS, {
+    anthropic: 'Anthropic',
+    mistral: 'Mistral',
+    openai: 'OpenAI',
+    perplexity: 'Perplexity',
+    gemini: 'Google',
+  })
+  for (const label of Object.values(PROVIDER_LABELS)) {
+    assert.doesNotMatch(label, /^(Claude|GPT|Gemini)$/i)
+  }
+  // Every labeled provider has a fallback model list, and vice versa (picker ↔ model list stay in sync).
+  assert.deepEqual(Object.keys(PROVIDER_LABELS).sort(), Object.keys(PROVIDER_FALLBACK_MODELS).sort())
+})
 
 test('curate strips a leading "Claude " persona word but keeps the model name', () => {
   assert.deepEqual(
@@ -98,4 +116,10 @@ test('the static fallback is self-consistent: no Fable/Mythos, default present &
   assert.ok(!ANTHROPIC_FALLBACK_MODELS.some((m) => DEFAULT_MODEL_EXCLUDE.test(m.id)))
   assert.equal(ANTHROPIC_FALLBACK_MODELS[0].id, ANTHROPIC_FALLBACK_MODEL_ID) // seeded default is first
   assert.ok(ANTHROPIC_FALLBACK_MODELS.some((m) => m.id === ANTHROPIC_FALLBACK_MODEL_ID))
+})
+
+test('providerLabel: vendor names for known ids, Title Case for unknown ones (e.g. custom)', () => {
+  assert.equal(providerLabel('anthropic'), 'Anthropic')
+  assert.equal(providerLabel('custom'), 'Custom')
+  assert.equal(providerLabel(''), '')
 })

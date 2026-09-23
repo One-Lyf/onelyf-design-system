@@ -4,7 +4,7 @@
 import { radius, textStyle } from '../../tokens'
 import { cssVar } from '../../theme'
 import type { Dispatch, SetStateAction } from 'react'
-import { PROVIDER_LABELS } from '../livChatModels'
+import { providerLabel } from '../livChatModels'
 import type { LivModel } from '../livChatModels'
 import type { LivChatAdapter, LivKeyInfo, LivModelSuggestion } from './types'
 
@@ -25,7 +25,7 @@ export function ModelSuggestionCard({ accent, adapter, pendingSuggestion, setPen
       <div style={{ ...textStyle('caption'), color: accent, fontWeight: 700 }}>Model suggestion</div>
       <p style={{ ...textStyle('caption'), color: cssVar.mid, margin: 0 }}>{pendingSuggestion.reason}</p>
       <div style={{ ...textStyle('caption'), color: cssVar.ink, fontWeight: 600 }}>
-        {PROVIDER_LABELS[pendingSuggestion.provider] ?? pendingSuggestion.provider} · {pendingSuggestion.model}
+        {providerLabel(pendingSuggestion.provider)} · {pendingSuggestion.model}
       </div>
       <div style={{ display: 'flex', gap: 6 }}>
         <button className="ds-btn" style={{ ...textStyle('caption'), fontWeight: 700, padding: '5px 12px', borderRadius: radius.sm, cursor: 'pointer', border: `1px solid ${accent}`, background: accent, color: cssVar.surface }}
@@ -37,7 +37,7 @@ export function ModelSuggestionCard({ accent, adapter, pendingSuggestion, setPen
               setModelInput(s.model)
               setKeyInfo((k) => ({ ...k, provider: s.provider, model: s.model }))
               setLiveModels(null)
-              setMsg(`Switched to ${PROVIDER_LABELS[s.provider] ?? s.provider} ${s.model}.`)
+              setMsg(`Switched to ${providerLabel(s.provider)} ${s.model}.`)
             }
             setPendingSuggestion(null)
           }}>Switch</button>
