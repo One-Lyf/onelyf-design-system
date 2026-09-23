@@ -4,7 +4,7 @@
 import { radius, textStyle } from '../../tokens'
 import { cssVar } from '../../theme'
 import type { CSSProperties, Dispatch, PointerEvent as ReactPointerEvent, SetStateAction } from 'react'
-import { PROVIDER_LABELS, PROVIDER_FALLBACK_MODELS } from '../livChatModels'
+import { PROVIDER_LABELS, providerLabel, PROVIDER_FALLBACK_MODELS } from '../livChatModels'
 import { EFFORT_LEVELS, effortIndex, effortAtIndex, MODES, VERBOSITY_OPTIONS, DEFAULT_COMPACT_THRESHOLD } from '../livChatModes'
 import type { LivChatAdapter, LivHat, LivMessage, LivUsage } from './types'
 import type { LivChatStyles } from './styles'
@@ -81,7 +81,7 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
                 {(keyInfo.availableProviders?.length
                   ? keyInfo.availableProviders
                   : Object.keys(PROVIDER_LABELS)
-                ).map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] || p}</option>)}
+                ).map((p) => <option key={p} value={p}>{providerLabel(p)}</option>)}
               </select>
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

@@ -65,6 +65,11 @@ export const PROVIDER_LABELS: Record<string, string> = {
   gemini: 'Google',
 }
 
+// Display label for a provider id. Ids without a vendor entry (e.g. a host's `custom`
+// endpoint) render Title Case rather than as the raw lowercase id.
+export const providerLabel = (id: string): string =>
+  PROVIDER_LABELS[id] ?? (id ? id.charAt(0).toUpperCase() + id.slice(1) : id)
+
 export const PROVIDER_FALLBACK_MODELS: Record<string, LivModel[]> = {
   anthropic: ANTHROPIC_FALLBACK_MODELS,
   mistral: [

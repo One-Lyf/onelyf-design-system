@@ -8,6 +8,7 @@ import {
   ANTHROPIC_FALLBACK_MODEL_ID,
   DEFAULT_MODEL_EXCLUDE,
   PROVIDER_LABELS,
+  providerLabel,
   PROVIDER_FALLBACK_MODELS,
 } from './livChatModels.ts'
 
@@ -115,4 +116,10 @@ test('the static fallback is self-consistent: no Fable/Mythos, default present &
   assert.ok(!ANTHROPIC_FALLBACK_MODELS.some((m) => DEFAULT_MODEL_EXCLUDE.test(m.id)))
   assert.equal(ANTHROPIC_FALLBACK_MODELS[0].id, ANTHROPIC_FALLBACK_MODEL_ID) // seeded default is first
   assert.ok(ANTHROPIC_FALLBACK_MODELS.some((m) => m.id === ANTHROPIC_FALLBACK_MODEL_ID))
+})
+
+test('providerLabel: vendor names for known ids, Title Case for unknown ones (e.g. custom)', () => {
+  assert.equal(providerLabel('anthropic'), 'Anthropic')
+  assert.equal(providerLabel('custom'), 'Custom')
+  assert.equal(providerLabel(''), '')
 })
