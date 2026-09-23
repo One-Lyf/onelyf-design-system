@@ -54,7 +54,7 @@ export type {
   LivToolActivity, LivUsage, LivModelSuggestion, LivChatSendResult,
   LivTaskStatus, LivBackgroundSendResult, LivTaskPollResult, LivTaskCancelResult,
   LivHat, LivChatAdapter, LivChatProps, LivProposedAction, LivActionQueue, LivChatAction,
-  LivSlashToolArg, LivSlashTool,
+  LivSlashToolArg, LivSlashTool, LivSpendInfo,
 } from './livChat/types'
 export { livChatStylesheet } from './livChat/stylesheet'
 

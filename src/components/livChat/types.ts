@@ -33,6 +33,12 @@ export interface LivKeyInfo {
   verbosity?: LivVerbosity | null
   autoCompact?: boolean | null
 }
+// What adapter.spend.get() resolves to (see LivChatAdapter.spend).
+export interface LivSpendInfo {
+  limitUsd: number | null
+  monthSpendUsd: number
+  canEdit: boolean
+}
 // LivModel lives in ./livChatModels; LivEffort/LivMode in ./livChatModes. Re-exported here so
 // the public surface stays single-import.
 export type { LivModel } from '../livChatModels'
@@ -208,6 +214,24 @@ export interface LivChatAdapter {
     // no redeploy. Absent (or a failed/empty call) → the picker uses hat.models / the static
     // fallback. The returned list is run through curateLivModels() before display.
     listModels?(): Promise<LivResult<{ models: LivModel[] }>>
+  }
+  // Optional monthly AI spend limit (BYOK). There is no platform key and no platform cap: the
+  // key's OWNER may set an optional monthly USD limit, blank/null = no limit (the default), and
+  // it also bounds household members the owner shares the key with. When present, the Brain
+  // sheet renders a SpendLimitField: it calls get() each time the sheet opens and setLimit() on
+  // "Save Limit" (then get() again to refresh). Absent → no spend UI at all. Renders only where
+  // the Brain sheet does (hat.enableKey !== false and adapter.key present).
+  //   get():      `limitUsd` null = no limit; `monthSpendUsd` = this UTC month's ESTIMATED spend
+  //               on the key (src/spend's getSpendSummary); `canEdit` false when the user is on
+  //               someone else's shared key (read-only; the organizer manages it). Reject on
+  //               failure; the sheet shows a neutral load error.
+  //   setLimit(): persist the limit (null clears it); the DS validates first (positive, cents).
+  //               Reject on failure; the field shows the error message.
+  // The server side (check before a call, record after) lives in src/spend (checkSpendLimit /
+  // recordSpend), which is dependency-free so edge functions can import it directly.
+  spend?: {
+    get(): Promise<LivSpendInfo>
+    setLimit(limitUsd: number | null): Promise<void>
   }
   // Optional voice capability. When present, the Hands-free toggle reads Liv's replies aloud
   // through the app's own voice (e.g. Google TTS + FX). When absent, Hands-free falls back to the

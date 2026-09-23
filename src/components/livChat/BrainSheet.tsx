@@ -11,6 +11,7 @@ import type { LivChatStyles } from './styles'
 import type { BrainSettings } from './useBrainSettings'
 import { usageCost } from './helpers'
 import { CloseI } from './icons'
+import { BrainSpendLimit } from './BrainSpendLimit'
 
 export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheetDragY, onBrainSheetHandlePointerDown, setMsg,
   activeId, messages, doCompact, tier, onTierChange, usage, lastTurn, daily }: {
@@ -252,6 +253,9 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
                 </div>
               )
             })()}
+            {/* Optional monthly spend limit (BYOK owner-set cap). Only when the host wires
+                adapter.spend; otherwise nothing renders. */}
+            {adapter.spend && <BrainSpendLimit spend={adapter.spend} accent={accent} />}
         <button className="ds-btn" style={S.primaryBtn} onClick={async () => { await saveKey(); setBrainOpen(false); }}>Save</button>
       </div>
     </div>
