@@ -19,10 +19,14 @@
 // glow is a separate radial gradient inside the SVG, so it stays tintable.
 // Imported (not in /public) so Vite content-hashes them — each update gets a
 // fresh URL, so browsers / PWAs can't serve a stale glyph.
-import crestUrl from './assets/glyph-crest.svg'
-import liveUrl from './assets/glyph-live.svg'
-import essenceUrl from './assets/glyph-essence.svg'
-import rootedUrl from './assets/glyph-rooted.svg'
+// `?no-inline`: library mode would otherwise inline all four traced SVGs (~480 KB of data-URL
+// string, ~113 KB gz) into the dist JS, so every app rendering LivChat carried every variant in
+// its boot bundle. As separate files, the consumer's Vite hashes each one and the browser only
+// fetches the variant it actually renders. Same bytes, same <img>, so the render is unchanged.
+import crestUrl from './assets/glyph-crest.svg?no-inline'
+import liveUrl from './assets/glyph-live.svg?no-inline'
+import essenceUrl from './assets/glyph-essence.svg?no-inline'
+import rootedUrl from './assets/glyph-rooted.svg?no-inline'
 import LivGlyphGrow, { LIV_GROW_MIN_SIZE } from './LivGlyphGrow'
 
 export type GlyphVariant = 'crest' | 'live' | 'essence' | 'rooted'

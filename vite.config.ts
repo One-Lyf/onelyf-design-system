@@ -4,9 +4,15 @@ import { resolve } from 'node:path'
 
 // Library build: the design system is consumed by the Lyf apps as a token +
 // component library, not shipped as its own app. `npm run build` emits an ES
-// bundle of the public surface (src/index.ts); PNG glyphs are inlined/copied.
+// bundle of the public surface (src/index.ts). Library mode inlines imported assets by default;
+// the glyph SVGs opt out with `?no-inline` and ship as separate files in dist/.
 export default defineConfig({
   plugins: [react()],
+  // Relative base so the glyph SVGs (imported `?no-inline`, see Glyph.tsx) are referenced from
+  // the dist bundle as `new URL("glyph-live.svg", import.meta.url)` instead of a root-absolute
+  // "/glyph-live.svg". The consuming app's Vite build picks that pattern up and emits each glyph
+  // as its own content-hashed file, so no app ships the four SVGs inside its JS any more.
+  base: './',
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
