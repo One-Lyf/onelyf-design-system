@@ -2,7 +2,7 @@
 // Moved out of LivChat.tsx (W3 legibility refactor): the in-flight task map, the tray's
 // open/cancel state, the short recent-history list, and the polling effect. LivChat calls this
 // hook at the same point its polling effect used to sit, so effect order is unchanged.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 import type { LivChatAdapter, LivMessage, LivTaskPollResult } from './types'
 
@@ -44,6 +44,10 @@ export function useBackgroundTasks({ adapter, activeIdRef, setMessages, setMsg, 
   // list-tasks backend endpoint yet, so this doesn't survive a reload; it just bridges the gap
   // between "resolved" and "the user opened the tray to look".
   const [recentTasks, setRecentTasks] = useState<Array<RecentTask>>([])
+  // Task ids already settled. Shared across effect instances: the effect re-runs whenever
+  // pendingTasks changes, and a sweep from the previous instance can still be awaiting pollTask,
+  // so without this two sweeps could settle the same task (duplicate tray row, double reload).
+  const settledRef = useRef<Set<string>>(new Set())
   async function cancelTask(taskId: string) {
     if (!adapter.chat.cancelTask) return
     setCancellingId(taskId)
@@ -69,16 +73,19 @@ export function useBackgroundTasks({ adapter, activeIdRef, setMessages, setMsg, 
     // `busy` stops two sweeps overlapping (a slow sweep, or the catch-up sweep on return to the
     // tab), which would otherwise settle the same task twice.
     let busy = false
+    let disposed = false
     const sweep = async () => {
       if (busy) return
       busy = true
       try {
         for (const taskId of ids) {
           const entry = pendingTasks[taskId]
-          if (!entry) continue
+          if (!entry || settledRef.current.has(taskId)) continue
           const r = await adapter.chat.pollTask!(taskId)
+          if (disposed) return // a newer effect instance owns polling now
           const outcome = taskPollOutcome(r)
-          if (outcome === 'pending') continue
+          if (outcome === 'pending' || settledRef.current.has(taskId)) continue
+          settledRef.current.add(taskId)
           setPendingTasks((t) => { const n = { ...t }; delete n[taskId]; return n })
           setRecentTasks((rt) => [{ taskId, sessionId: entry.sessionId, input: entry.input, status: outcome, completedAt: Date.now() }, ...rt].slice(0, 5))
           if (activeIdRef.current !== entry.sessionId) continue // resolved for a session the user isn't looking at; drop it silently
@@ -105,6 +112,7 @@ export function useBackgroundTasks({ adapter, activeIdRef, setMessages, setMsg, 
     if (!isHidden()) start()
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
     return () => {
+      disposed = true
       stop()
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
     }
