@@ -54,12 +54,15 @@ export const ANTHROPIC_FALLBACK_MODELS: LivModel[] = [
   { id: 'claude-haiku-4-5', label: 'Haiku 4.5 · fastest' },
 ]
 
+// BYOK Provider picker labels = the real VENDOR whose key the user pastes (Jeff's 2026-09-10
+// ruling), never an assistant/model-family brand: "Anthropic" not "Claude", "OpenAI" not "GPT",
+// "Google" not "Gemini". Model names (Opus, GPT-5, Gemini 2.5 Pro…) belong in the Model picker.
 export const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Claude',
+  anthropic: 'Anthropic',
   mistral: 'Mistral',
-  openai: 'GPT',
+  openai: 'OpenAI',
   perplexity: 'Perplexity',
-  gemini: 'Gemini',
+  gemini: 'Google',
 }
 
 export const PROVIDER_FALLBACK_MODELS: Record<string, LivModel[]> = {

@@ -7,7 +7,24 @@ import {
   ANTHROPIC_FALLBACK_MODELS,
   ANTHROPIC_FALLBACK_MODEL_ID,
   DEFAULT_MODEL_EXCLUDE,
+  PROVIDER_LABELS,
+  PROVIDER_FALLBACK_MODELS,
 } from './livChatModels.ts'
+
+test('provider labels are real vendor names, never assistant/model-family brands', () => {
+  assert.deepEqual(PROVIDER_LABELS, {
+    anthropic: 'Anthropic',
+    mistral: 'Mistral',
+    openai: 'OpenAI',
+    perplexity: 'Perplexity',
+    gemini: 'Google',
+  })
+  for (const label of Object.values(PROVIDER_LABELS)) {
+    assert.doesNotMatch(label, /^(Claude|GPT|Gemini)$/i)
+  }
+  // Every labeled provider has a fallback model list, and vice versa (picker ↔ model list stay in sync).
+  assert.deepEqual(Object.keys(PROVIDER_LABELS).sort(), Object.keys(PROVIDER_FALLBACK_MODELS).sort())
+})
 
 test('curate strips a leading "Claude " persona word but keeps the model name', () => {
   assert.deepEqual(
