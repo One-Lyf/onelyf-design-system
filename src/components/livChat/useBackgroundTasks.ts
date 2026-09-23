@@ -4,10 +4,20 @@
 // hook at the same point its polling effect used to sit, so effect order is unchanged.
 import { useEffect, useState } from 'react'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
-import type { LivChatAdapter, LivMessage } from './types'
+import type { LivChatAdapter, LivMessage, LivTaskPollResult } from './types'
 
 export type PendingTask = { sessionId: string; placeholderId: string; input: string; startedAt: number }
 export type RecentTask = { taskId: string; sessionId: string; input: string; status: 'done' | 'error'; completedAt: number }
+
+// What one poll result means for the task. A task the backend no longer knows (HTTP 404, surfaced
+// as error.code 'not_found': deleted, expired, or never existed) can never resolve, so it settles
+// as an error instead of being polled forever. Any other failed poll is treated as transient and
+// retried on the next tick, as before.
+export function taskPollOutcome(r: LivTaskPollResult): 'pending' | 'done' | 'error' {
+  if (!r.ok) return r.error?.code === 'not_found' ? 'error' : 'pending'
+  if (r.status === 'queued' || r.status === 'running') return 'pending'
+  return r.status === 'done' ? 'done' : 'error'
+}
 
 export function useBackgroundTasks({ adapter, activeIdRef, setMessages, setMsg, resolveUrls }: {
   adapter: LivChatAdapter
@@ -56,24 +66,48 @@ export function useBackgroundTasks({ adapter, activeIdRef, setMessages, setMsg, 
   useEffect(() => {
     const ids = Object.keys(pendingTasks)
     if (!ids.length || !adapter.chat.pollTask) return
-    const id = setInterval(async () => {
-      for (const taskId of ids) {
-        const entry = pendingTasks[taskId]
-        if (!entry) continue
-        const r = await adapter.chat.pollTask!(taskId)
-        if (!r.ok || r.status === 'queued' || r.status === 'running') continue
-        setPendingTasks((t) => { const n = { ...t }; delete n[taskId]; return n })
-        setRecentTasks((rt) => [{ taskId, sessionId: entry.sessionId, input: entry.input, status: (r.status === 'done' ? 'done' : 'error') as 'done' | 'error', completedAt: Date.now() }, ...rt].slice(0, 5))
-        if (activeIdRef.current !== entry.sessionId) continue // resolved for a session the user isn't looking at; drop it silently
-        if (r.status === 'done') {
-          const reloaded = await adapter.messages.list(entry.sessionId)
-          if (activeIdRef.current === entry.sessionId && reloaded.ok) { setMessages(reloaded.value.messages); resolveUrls(reloaded.value.messages) }
-        } else {
-          setMessages((m) => m.map((mm) => mm.id === entry.placeholderId ? { ...mm, content: r.error || "Liv couldn't finish this in the background." } : mm))
+    // `busy` stops two sweeps overlapping (a slow sweep, or the catch-up sweep on return to the
+    // tab), which would otherwise settle the same task twice.
+    let busy = false
+    const sweep = async () => {
+      if (busy) return
+      busy = true
+      try {
+        for (const taskId of ids) {
+          const entry = pendingTasks[taskId]
+          if (!entry) continue
+          const r = await adapter.chat.pollTask!(taskId)
+          const outcome = taskPollOutcome(r)
+          if (outcome === 'pending') continue
+          setPendingTasks((t) => { const n = { ...t }; delete n[taskId]; return n })
+          setRecentTasks((rt) => [{ taskId, sessionId: entry.sessionId, input: entry.input, status: outcome, completedAt: Date.now() }, ...rt].slice(0, 5))
+          if (activeIdRef.current !== entry.sessionId) continue // resolved for a session the user isn't looking at; drop it silently
+          if (outcome === 'done') {
+            const reloaded = await adapter.messages.list(entry.sessionId)
+            if (activeIdRef.current === entry.sessionId && reloaded.ok) { setMessages(reloaded.value.messages); resolveUrls(reloaded.value.messages) }
+          } else {
+            const reason = r.ok ? r.error : null
+            setMessages((m) => m.map((mm) => mm.id === entry.placeholderId ? { ...mm, content: reason || "Liv couldn't finish this in the background." } : mm))
+          }
         }
+      } finally {
+        busy = false
       }
-    }, 3000)
-    return () => clearInterval(id)
+    }
+    // Paused while the tab is hidden: nobody is looking, so a request every 3 s is pure waste.
+    // Coming back polls once straight away (the task may well have finished meanwhile), then
+    // resumes the interval.
+    const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    let timer: ReturnType<typeof setInterval> | null = null
+    const start = () => { if (timer === null) timer = setInterval(sweep, 3000) }
+    const stop = () => { if (timer !== null) { clearInterval(timer); timer = null } }
+    const onVisibility = () => { if (isHidden()) stop(); else { void sweep(); start() } }
+    if (!isHidden()) start()
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stop()
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [pendingTasks, adapter])
   return { pendingTasks, setPendingTasks, tasksOpen, setTasksOpen, cancellingId, recentTasks, cancelTask }
 }

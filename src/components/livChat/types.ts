@@ -87,7 +87,9 @@ export type LivBackgroundSendResult =
   | { ok: false; error?: { message?: string; detail?: string } }
 export type LivTaskPollResult =
   | { ok: true; status: LivTaskStatus; result?: string | null; error?: string | null }
-  | { ok: false; error?: { message?: string } }
+  // `code: 'not_found'` (the backend's HTTP 404 for an unknown task) tells LivChat to stop
+  // polling that task and settle it as an error; any other failure is retried.
+  | { ok: false; error?: { message?: string; code?: string } }
 export type LivTaskCancelResult =
   | { ok: true }
   | { ok: false; error?: { message?: string } }
