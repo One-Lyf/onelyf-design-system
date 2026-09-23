@@ -16,10 +16,10 @@
 // original order), the session/send logic, and the top-level layout. The pieces it composes
 // live in ./livChat/ (types, styles, hooks, and one file per visual block). Every public
 // export below is unchanged, so no consumer import moves.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
-import { partialTurnToAppend } from './livChatComposer'
+import { partialTurnToAppend, type LivArtifact, type LivDocument } from './livChatComposer'
 import { DEFAULT_COMPACT_THRESHOLD } from './livChatModes'
 import type { LivChatProps, LivMessage, LivModelSuggestion, LivSession, LivToolActivity } from './livChat/types'
 import { livChatStyles } from './livChat/styles'
@@ -303,9 +303,13 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
 
   // Report chat state to a persistent host (LivDock) so its bubble can show an unread dot / thinking
   // pulse. thinking = a turn is in flight (sending) or streaming in. No-op when onState is omitted.
+  // Keyed on the `thinking` boolean, not `streaming`: keyed on the text, this fired a fresh state
+  // object at the host on every streamed token, and hosts that store it (Tummyful's CommisDock,
+  // Cash Stash's AdvisorDock) re-rendered themselves and this chat a second time per token.
+  const thinking = sending || streaming.length > 0
   useEffect(() => {
-    onState?.({ messageCount: messages.length, thinking: sending || streaming.length > 0 })
-  }, [messages.length, sending, streaming, onState])
+    onState?.({ messageCount: messages.length, thinking })
+  }, [messages.length, thinking, onState])
 
   useEffect(() => {
     onMessagesChange?.(messages, activeId)
@@ -620,8 +624,26 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
   // Brain sheet Escape + drag-to-dismiss (its Escape effect was the last effect in this file).
   const { sheetDragY, onBrainSheetHandlePointerDown } = useBrainSheetDrag(brainOpen, setBrainOpen)
 
+  // Message rows are memoized (see MessageBubble) so a streamed token re-renders only the live
+  // turn, not the whole transcript. That only works if the handlers the rows get keep one identity
+  // across renders, so each stable wrapper below forwards to the handler from the LATEST render
+  // (a row can never call a stale closure, e.g. an old `send`).
+  const bubbleHandlersRef = useRef({ playMessage, copyMessage, handleLinkTap, send, downloadDocument, openArtifact })
+  bubbleHandlersRef.current = { playMessage, copyMessage, handleLinkTap, send, downloadDocument, openArtifact }
+  const bubbleHandlers = useMemo(() => ({
+    playMessage: (id: string, text?: string | null) => bubbleHandlersRef.current.playMessage(id, text),
+    copyMessage: (id: string, text?: string | null) => bubbleHandlersRef.current.copyMessage(id, text),
+    handleLinkTap: (url: string) => bubbleHandlersRef.current.handleLinkTap(url),
+    send: (overrideText?: string) => bubbleHandlersRef.current.send(overrideText),
+    downloadDocument: (doc: LivDocument) => bubbleHandlersRef.current.downloadDocument(doc),
+    openArtifact: (a: LivArtifact) => bubbleHandlersRef.current.openArtifact(a),
+  }), [])
+  const lastMessageId = messages[messages.length - 1]?.id
+
   // ── styles (inline, token-driven) ──
-  const S = livChatStyles(accent)
+  // Memoized on the accent: same values as before, but a stable object, so memoized children
+  // that take `S` don't re-render just because the parent did.
+  const S = useMemo(() => livChatStyles(accent), [accent])
 
   return (
     <section className="lc-root" data-dock={dock} style={{
@@ -665,12 +687,17 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
             {messages.length === 0 && !streaming && (
               <EmptyState S={S} hat={hat} accent={accent} livGlyphState={livGlyphState} setDraft={setDraft} />
             )}
-            {messages.map((m) => (
-              <MessageBubble key={m.id} S={S} m={m} messages={messages} sending={sending} urls={urls}
-                playingId={playingId} highlightRange={highlightRange} playMessage={playMessage}
-                copiedId={copiedId} copyMessage={copyMessage} handleLinkTap={handleLinkTap} send={send}
-                downloadDocument={downloadDocument} openArtifact={openArtifact} />
-            ))}
+            {messages.map((m) => {
+              // Per-row primitives instead of the shared `messages` / `playingId` / `copiedId` /
+              // `sending`, so a change only re-renders the rows it actually affects.
+              const isLast = m.id === lastMessageId
+              const isPlaying = playingId === m.id
+              return (
+                <MessageBubble key={m.id} S={S} m={m} isLast={isLast} sendingLast={isLast && sending} urls={urls}
+                  isPlaying={isPlaying} highlightRange={isPlaying ? highlightRange : null}
+                  isCopied={copiedId === m.id} {...bubbleHandlers} />
+              )
+            })}
             {(streaming || toolActivity) && (
               <LiveTurnBubble S={S} hat={hat} adapter={adapter} liveTurnRef={liveTurnRef} sending={sending}
                 elapsedSec={elapsedSec} toolActivity={toolActivity} streaming={streaming} stop={stop}

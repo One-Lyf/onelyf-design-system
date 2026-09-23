@@ -1,6 +1,12 @@
 // ─── One transcript message bubble ───────────────────────────────────────────────
 // Moved verbatim out of LivChat.tsx's render (W3 legibility refactor): same DOM, classes,
 // styles and copy; the parent passes the state/handlers the JSX used to close over.
+//
+// Memoized: while a reply streams, LivChat re-renders on every token, and without memo every
+// finished row re-ran its fence parsing and linkify each time. The parent passes per-row
+// primitives (isLast / isPlaying / isCopied / sendingLast) and stable handlers, so a row
+// re-renders only when something it shows actually changed.
+import { memo, useMemo } from 'react'
 import { radius, space, textStyle } from '../../tokens'
 import { cssVar } from '../../theme'
 import { extractDocument, extractArtifact, extractOptions, type LivDocument, type LivArtifact } from '../livChatComposer'
@@ -10,17 +16,21 @@ import { attachmentsOf } from './helpers'
 import { HighlightedText, Linkified, ModalityPill } from './MessageParts'
 import { CheckI, CodeI, CopyI, DownloadI, FileTextI, ImageI, PlayI, StopSmallI } from './icons'
 
-export function MessageBubble({ S, m, messages, sending, urls, playingId, highlightRange, playMessage, copiedId, copyMessage,
-  handleLinkTap, send, downloadDocument, openArtifact }: {
+export const MessageBubble = memo(function MessageBubble({ S, m, isLast, sendingLast, urls, isPlaying, highlightRange, playMessage,
+  isCopied, copyMessage, handleLinkTap, send, downloadDocument, openArtifact }: {
   S: LivChatStyles
   m: LivMessage
-  messages: LivMessage[]
-  sending: boolean
+  /** This is the newest message in the transcript. */
+  isLast: boolean
+  /** A turn is sending AND this is the newest message (only the newest row's option cards care). */
+  sendingLast: boolean
   urls: Record<string, string>
-  playingId: string | null
+  /** This message is the one being read aloud. */
+  isPlaying: boolean
+  /** Spoken-word range; only meaningful (and only passed non-null) while this row is playing. */
   highlightRange: { start: number; end: number } | null
   playMessage: (id: string, text?: string | null) => void
-  copiedId: string | null
+  isCopied: boolean
   copyMessage: (id: string, text?: string | null) => void
   handleLinkTap: (url: string) => void
   send: (overrideText?: string) => void
@@ -31,23 +41,27 @@ export function MessageBubble({ S, m, messages, sending, urls, playingId, highli
   // downloadable document (see extractDocument's own comment for the fence
   // convention). Only checked on liv turns — a user's own message is never
   // parsed as a document, even if it happens to contain a ```document fence.
-  const doc = m.role === 'liv' ? extractDocument(m.content) : null
-  // livchat-artifacts-system: a liv reply can flag CODE as a live-rendered artifact
-  // (```artifact lang Title) instead of a plain downloadable ```document — opens in
-  // the dedicated side panel (see the artifact state/effects above `send`) rather
-  // than an inline download. Checked after `doc` (document wins the rare both-fence
-  // case, same precedence style as doc-vs-options below).
-  const artifactFound = !doc && m.role === 'liv' ? extractArtifact(m.content) : null
-  // livchat-decision-options-cards: a liv reply can offer labelled choices via an
-  // ```options fence; DS renders them as tappable cards and a tap sends that choice
-  // as the next turn. Always PARSED on liv turns (so the raw fence is stripped from
-  // the transcript even on older messages), but only the MOST-RECENT message's cards
-  // stay tappable — stale choices from an earlier turn shouldn't re-fire once the
-  // conversation has moved on. Documents/artifacts take precedence in the rare
-  // multi-fence case.
-  const isLast = m.id === messages[messages.length - 1]?.id
-  const opts = !doc && !artifactFound && m.role === 'liv' ? extractOptions(m.content) : null
-  const optionsLive = !!opts && isLast && !sending
+  // Parsing is keyed on the message text, so a row that re-renders for another reason (read-aloud
+  // highlight, copy tick) doesn't re-scan its whole content.
+  const { doc, artifactFound, opts } = useMemo(() => {
+    const doc = m.role === 'liv' ? extractDocument(m.content) : null
+    // livchat-artifacts-system: a liv reply can flag CODE as a live-rendered artifact
+    // (```artifact lang Title) instead of a plain downloadable ```document — opens in
+    // the dedicated side panel (see the artifact state/effects above `send`) rather
+    // than an inline download. Checked after `doc` (document wins the rare both-fence
+    // case, same precedence style as doc-vs-options below).
+    const artifactFound = !doc && m.role === 'liv' ? extractArtifact(m.content) : null
+    // livchat-decision-options-cards: a liv reply can offer labelled choices via an
+    // ```options fence; DS renders them as tappable cards and a tap sends that choice
+    // as the next turn. Always PARSED on liv turns (so the raw fence is stripped from
+    // the transcript even on older messages), but only the MOST-RECENT message's cards
+    // stay tappable — stale choices from an earlier turn shouldn't re-fire once the
+    // conversation has moved on. Documents/artifacts take precedence in the rare
+    // multi-fence case.
+    const opts = !doc && !artifactFound && m.role === 'liv' ? extractOptions(m.content) : null
+    return { doc, artifactFound, opts }
+  }, [m.role, m.content])
+  const optionsLive = !!opts && isLast && !sendingLast
   // livchat-agentic-workflows: the locally-synthesized placeholder for a background
   // task still in flight (queued/running) — send() inserts it with empty content and
   // an id prefixed `task-`; the polling effect above fills in real content (done) or
@@ -62,11 +76,11 @@ export function MessageBubble({ S, m, messages, sending, urls, playingId, highli
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         {m.role === 'liv' && m.content && (
           <button className="lc-iconbtn" style={S.iconbtn}
-            title={playingId === m.id ? 'Stop reading aloud' : 'Read this message aloud'}
-            aria-label={playingId === m.id ? 'Stop reading aloud' : 'Read this message aloud'}
-            aria-pressed={playingId === m.id}
+            title={isPlaying ? 'Stop reading aloud' : 'Read this message aloud'}
+            aria-label={isPlaying ? 'Stop reading aloud' : 'Read this message aloud'}
+            aria-pressed={isPlaying}
             onClick={() => playMessage(m.id, m.content)}>
-            {playingId === m.id ? <StopSmallI /> : <PlayI />}
+            {isPlaying ? <StopSmallI /> : <PlayI />}
           </button>
         )}
         <span style={{ ...textStyle('overline'), color: cssVar.mid }}>{m.role === 'liv' ? 'Liv' : 'You'}</span>
@@ -148,7 +162,7 @@ export function MessageBubble({ S, m, messages, sending, urls, playingId, highli
       ) : (
         m.content && (
           <div style={{ ...textStyle('body'), whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {playingId === m.id && highlightRange
+            {isPlaying && highlightRange
               ? <HighlightedText text={m.content} range={highlightRange} />
               : <Linkified text={m.content} onLinkTap={handleLinkTap} />}
           </div>
@@ -157,10 +171,10 @@ export function MessageBubble({ S, m, messages, sending, urls, playingId, highli
       {m.content && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
           <button className="lc-copy lc-iconbtn" style={S.iconbtn} title="Copy message" onClick={() => copyMessage(m.id, m.content)}>
-            {copiedId === m.id ? (<><CheckI /> <span style={textStyle('caption')}>Copied</span></>) : <CopyI />}
+            {isCopied ? (<><CheckI /> <span style={textStyle('caption')}>Copied</span></>) : <CopyI />}
           </button>
         </div>
       )}
     </div>
   )
-}
+})

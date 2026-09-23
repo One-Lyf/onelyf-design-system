@@ -42,7 +42,7 @@
 // The asset is imported directly rather than via Glyph's GLYPH_URLS: Glyph
 // renders this component, so reading back from it would be a circular import.
 import { useId } from 'react'
-import rootedUrl from './assets/glyph-rooted.svg'
+import rootedUrl from './assets/glyph-rooted.svg?no-inline'
 
 /** Below this rendered size the traced glyph is mud; use the simplified mark. */
 export const LIV_GROW_MIN_SIZE = 48
