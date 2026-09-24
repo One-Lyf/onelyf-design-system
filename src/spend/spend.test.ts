@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, pricingFor, estimateCostUsd,
   spendMonth, formatUsd, normalizeSpendLimit, parseSpendLimitInput, SPEND_LIMIT_INPUT_ERROR, spendLimitMessage,
-  checkSpendLimit, recordSpend, getSpendSummary, createMemorySpendStore,
+  SPEND_UNAVAILABLE_MESSAGE, CACHE_WRITE_MULTIPLIER, CACHE_READ_MULTIPLIER, checkSpendLimit, recordSpend, getSpendSummary, createMemorySpendStore,
   type SpendStore,
 } from './index.ts'
 
@@ -68,6 +68,22 @@ test('estimateCostUsd: per-million math; bad token counts count as 0', () => {
   assert.equal(estimateCostUsd('claude-sonnet-4-6', 2_000_000, 500_000), 2 * i + 0.5 * o)
   assert.equal(estimateCostUsd('claude-sonnet-4-6', -5, Number.NaN), 0)
   assert.equal(estimateCostUsd('claude-sonnet-4-6', 0, 0), 0)
+})
+
+test('estimateCostUsd: cache write 1.25x / read 0.1x the input rate; optional (backward compatible)', () => {
+  const [i, o] = PRICING_PER_MTOK['claude-sonnet-4-6']
+  assert.equal(CACHE_WRITE_MULTIPLIER, 1.25)
+  assert.equal(CACHE_READ_MULTIPLIER, 0.1)
+  const base = estimateCostUsd('claude-sonnet-4-6', 1_000_000, 1_000_000)
+  assert.equal(base, i + o)
+  assert.equal(estimateCostUsd('claude-sonnet-4-6', 1_000_000, 1_000_000, {}), base)
+  assert.equal(estimateCostUsd('claude-sonnet-4-6', 0, 0, { cacheWriteTokens: 1_000_000 }), i * 1.25)
+  assert.equal(estimateCostUsd('claude-sonnet-4-6', 0, 0, { cacheReadTokens: 1_000_000 }), i * 0.1)
+  assert.equal(
+    estimateCostUsd('claude-sonnet-4-6', 1_000_000, 1_000_000, { cacheWriteTokens: 2_000_000, cacheReadTokens: 10_000_000 }),
+    i + o + 2 * i * 1.25 + 10 * i * 0.1,
+  )
+  assert.equal(estimateCostUsd('claude-sonnet-4-6', 0, 0, { cacheWriteTokens: -1, cacheReadTokens: Number.NaN }), 0)
 })
 
 // ── pure helpers ──
@@ -152,7 +168,7 @@ test('checkSpendLimit: AT the limit → blocked (429, message, figures)', async 
   await s.inner.addSpend('owner', '2026-09', 10)
   const r = await checkSpendLimit(s, 'owner', { now: SEPT })
   assert.deepEqual(r, {
-    blocked: true, status: 429, message: spendLimitMessage(10), limitUsd: 10, monthSpendUsd: 10, reason: 'limit_reached',
+    blocked: true, status: 429, reason: 'limit', message: spendLimitMessage(10), limitUsd: 10, monthSpendUsd: 10,
   })
 })
 
@@ -177,12 +193,14 @@ test('checkSpendLimit: spend is per owner', async () => {
   assert.deepEqual(await checkSpendLimit(s, 'owner', { now: SEPT }), { blocked: false })
 })
 
-test('checkSpendLimit: store error with a limit set → fails CLOSED by default', quiet(async () => {
+test('checkSpendLimit: store error with a limit set → fails CLOSED as 503 unavailable (not "limit reached")', quiet(async () => {
   const s = spyStore({ limit: 10, failGetMonth: true })
   const r = await checkSpendLimit(s, 'owner', { now: SEPT })
   assert.deepEqual(r, {
-    blocked: true, status: 429, message: spendLimitMessage(10), limitUsd: 10, monthSpendUsd: null, reason: 'unverified',
+    blocked: true, status: 503, reason: 'unavailable', message: SPEND_UNAVAILABLE_MESSAGE, limitUsd: 10,
   })
+  assert.equal(SPEND_UNAVAILABLE_MESSAGE, "Couldn't check your AI spend right now; try again shortly.")
+  assert.doesNotMatch(SPEND_UNAVAILABLE_MESSAGE, /reached/)
 }))
 
 test('checkSpendLimit: store error with a limit set and failClosed:false → allowed', quiet(async () => {
@@ -219,6 +237,18 @@ test('recordSpend: month rollover writes to the new month', async () => {
   const each = estimateCostUsd('gpt-5.1', 1000, 1000)
   assert.equal(await s.inner.getMonthSpend('owner', '2026-09'), each)
   assert.equal(await s.inner.getMonthSpend('owner', '2026-10'), each)
+})
+
+test('recordSpend: passes cache tokens through to the estimate', async () => {
+  const s = spyStore()
+  const args = { model: 'claude-haiku-4-5', inputTokens: 10_000, outputTokens: 2_000, cacheWriteTokens: 50_000, cacheReadTokens: 400_000 }
+  const usd = await recordSpend(s, 'owner', { ...args, now: SEPT })
+  const expected = estimateCostUsd(args.model, args.inputTokens, args.outputTokens, { cacheWriteTokens: args.cacheWriteTokens, cacheReadTokens: args.cacheReadTokens })
+  assert.equal(usd, expected)
+  assert.ok(usd > estimateCostUsd(args.model, args.inputTokens, args.outputTokens))
+  assert.equal(await s.inner.getMonthSpend('owner', '2026-09'), usd)
+  // Cache-only turn (all input served from cache) still records.
+  assert.ok(await recordSpend(s, 'owner', { model: 'claude-haiku-4-5', cacheReadTokens: 100_000, now: SEPT }) > 0)
 })
 
 test('recordSpend: unknown model is priced at the default', async () => {
@@ -270,4 +300,15 @@ test('createMemorySpendStore: setLimit normalizes', async () => {
   assert.equal(await s.getLimit('a'), null)
   await s.setLimit('a', 20)
   assert.equal(await s.getLimit('a'), 20)
+})
+
+// Deno imports src/spend by raw URL: every import in the shipped files must be relative './*.ts'.
+test('src/spend ships only relative .ts imports (Deno raw-URL constraint)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  for (const f of ['index.ts', 'pricing.ts']) {
+    const code = (await readFile(new URL(`./${f}`, import.meta.url), 'utf8')).replace(/^\s*\/\/.*$/gm, '')
+    const specs = [...code.matchAll(/\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+    if (f === 'index.ts') assert.ok(specs.length >= 2, 'expected to see index.ts importing pricing.ts')
+    for (const spec of specs) assert.match(spec, /^\.\/[\w-]+\.ts$/, `${f}: ${spec}`)
+  }
 })

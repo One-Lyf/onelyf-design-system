@@ -54,11 +54,33 @@ export function pricingFor(model: string | null | undefined): readonly [number, 
   return hit ? PRICING_PER_MTOK[hit] : DEFAULT_PRICING_PER_MTOK
 }
 
-function tokens(n: number): number {
-  return Number.isFinite(n) && n > 0 ? n : 0
+// Prompt-cache token pricing as multiples of the model's INPUT rate (Anthropic: a cache write
+// costs 1.25x, a cache read 0.1x). Applied to every provider's reported cache tokens: an
+// estimate, like the rest of this table.
+export const CACHE_WRITE_MULTIPLIER = 1.25
+export const CACHE_READ_MULTIPLIER = 0.1
+
+// Cache token counts as the provider reports them SEPARATELY from inputTokens (Anthropic's
+// cache_creation_input_tokens / cache_read_input_tokens are not included in input_tokens).
+export interface CacheTokens {
+  cacheWriteTokens?: number
+  cacheReadTokens?: number
 }
 
-export function estimateCostUsd(model: string | null | undefined, inputTokens: number, outputTokens: number): number {
+function tokens(n: number | undefined): number {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0
+}
+
+// Backward compatible: the 4th argument is optional; omitted = no cache tokens.
+export function estimateCostUsd(
+  model: string | null | undefined,
+  inputTokens: number,
+  outputTokens: number,
+  { cacheWriteTokens, cacheReadTokens }: CacheTokens = {},
+): number {
   const [inRate, outRate] = pricingFor(model)
-  return (tokens(inputTokens) / 1e6) * inRate + (tokens(outputTokens) / 1e6) * outRate
+  return (tokens(inputTokens) / 1e6) * inRate
+    + (tokens(outputTokens) / 1e6) * outRate
+    + (tokens(cacheWriteTokens) / 1e6) * inRate * CACHE_WRITE_MULTIPLIER
+    + (tokens(cacheReadTokens) / 1e6) * inRate * CACHE_READ_MULTIPLIER
 }

@@ -10,12 +10,19 @@
 //   import { checkSpendLimit, recordSpend } from
 //     'https://raw.githubusercontent.com/One-Lyf/onelyf-design-system/<sha>/src/spend/index.ts'
 // so every import inside src/spend/ MUST be relative with an explicit `.ts` extension.
+// Node (serverless api/*.js etc.) imports the BUILT copy instead, which pulls in no React/UI:
+//   import { checkSpendLimit, recordSpend } from 'onelyf-design-system/spend'
+// (package.json "exports"["./spend"] → dist/spend/index.js + .d.ts, emitted by
+// tsconfig.spend.json during build/prepare).
 //
 // Storage is the host's: implement SpendStore over whatever it already has (a Supabase table +
 // an atomic increment RPC, a KV hash, ...). Everything here is store-agnostic.
-import { estimateCostUsd } from './pricing.ts'
+import { estimateCostUsd, type CacheTokens } from './pricing.ts'
 
-export { PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, pricingFor, estimateCostUsd } from './pricing.ts'
+export {
+  PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, CACHE_WRITE_MULTIPLIER, CACHE_READ_MULTIPLIER, pricingFor, estimateCostUsd,
+  type CacheTokens,
+} from './pricing.ts'
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -67,6 +74,10 @@ export function spendLimitMessage(limitUsd: number): string {
   return `This key's monthly AI spend limit (${formatUsd(limitUsd)}) is reached. It resets next month, or the key's owner can raise it in Settings → AI.`
 }
 
+// Returned (503) when a limit is set but the month's spend couldn't be read. Deliberately NOT the
+// "limit reached" wording: the user may be nowhere near the limit.
+export const SPEND_UNAVAILABLE_MESSAGE = "Couldn't check your AI spend right now; try again shortly."
+
 // ── Store port ──────────────────────────────────────────────────────────────
 
 // `ownerId` is the KEY OWNER (the billing identity), not necessarily the signed-in user: a
@@ -88,21 +99,17 @@ export interface SpendClock {
 
 export type SpendCheck =
   | { blocked: false }
-  | {
-      blocked: true
-      status: 429
-      message: string
-      limitUsd: number
-      // null when the month's spend couldn't be read (a fail-closed block).
-      monthSpendUsd: number | null
-      reason: 'limit_reached' | 'unverified'
-    }
+  // A real limit hit: this month's spend is at or over the owner's limit.
+  | { blocked: true; status: 429; reason: 'limit'; message: string; limitUsd: number; monthSpendUsd: number }
+  // Fail-closed: a limit is set but the month's spend couldn't be read (store error).
+  | { blocked: true; status: 503; reason: 'unavailable'; message: string; limitUsd: number }
 
 // Pre-call check against the owner's optional limit.
 // - No limit → allowed after ONE store call (getLimit); the month total is never read.
 // - Limit set → blocked when this month's spend is at or over it.
-// - Store error reading the month total with a limit set → blocked when `failClosed` (default),
-//   because the owner explicitly asked to be protected; allowed otherwise.
+// - Store error reading the month total with a limit set → blocked (503 'unavailable', "try
+//   again shortly" wording) when `failClosed` (default), because the owner explicitly asked to be
+//   protected; allowed otherwise.
 // - Store error reading the LIMIT itself → allowed: there is no known limit to enforce, and
 //   blocking would cap every user without a limit (the default) during an outage.
 // The check sees spend as of the START of this call (recordSpend lands after the model returns),
@@ -126,10 +133,10 @@ export async function checkSpendLimit(
   } catch (e) {
     console.error('Spend total lookup failed:', errMessage(e))
     if (!failClosed) return { blocked: false }
-    return { blocked: true, status: 429, message: spendLimitMessage(limitUsd), limitUsd, monthSpendUsd: null, reason: 'unverified' }
+    return { blocked: true, status: 503, reason: 'unavailable', message: SPEND_UNAVAILABLE_MESSAGE, limitUsd }
   }
   if (monthSpendUsd >= limitUsd) {
-    return { blocked: true, status: 429, message: spendLimitMessage(limitUsd), limitUsd, monthSpendUsd, reason: 'limit_reached' }
+    return { blocked: true, status: 429, reason: 'limit', message: spendLimitMessage(limitUsd), limitUsd, monthSpendUsd }
   }
   return { blocked: false }
 }
@@ -140,10 +147,11 @@ export async function checkSpendLimit(
 export async function recordSpend(
   store: SpendStore,
   ownerId: string,
-  { model, inputTokens, outputTokens, now }: { model: string | null | undefined; inputTokens?: number; outputTokens?: number } & SpendClock,
+  { model, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens, now }:
+    { model: string | null | undefined; inputTokens?: number; outputTokens?: number } & CacheTokens & SpendClock,
 ): Promise<number> {
   try {
-    const usd = estimateCostUsd(model, inputTokens ?? 0, outputTokens ?? 0)
+    const usd = estimateCostUsd(model, inputTokens ?? 0, outputTokens ?? 0, { cacheWriteTokens, cacheReadTokens })
     if (!(usd > 0)) return 0
     await store.addSpend(ownerId, spendMonth(now), usd)
     return usd
