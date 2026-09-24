@@ -136,6 +136,7 @@ function createDemoSpend(): { get(): Promise<LivSpendInfo>; setLimit(limitUsd: n
       return { ...(await getSpendSummary(store, owner)), canEdit }
     },
     async setLimit(limitUsd) {
+      console.info('spend.setLimit', limitUsd) // lets a Playwright check count calls
       await new Promise((r) => setTimeout(r, 400))
       await store.setLimit(owner, limitUsd)
     },

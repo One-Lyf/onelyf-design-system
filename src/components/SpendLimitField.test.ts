@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 const root = fileURLToPath(new URL('../..', import.meta.url))
 let vite: ViteDevServer
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let Field: any, BrainSheet: any, useBrainSettings: any, livChatStyles: any
+let Field: any, saveAction: any, BrainSheet: any, useBrainSettings: any, livChatStyles: any
 
 before(async () => {
   vite = await createServer({
@@ -19,7 +19,9 @@ before(async () => {
     server: { middlewareMode: true, hmr: false, ws: false },
     optimizeDeps: { noDiscovery: true, include: [] },
   })
-  Field = (await vite.ssrLoadModule('/src/components/SpendLimitField.tsx')).default
+  const fieldMod = await vite.ssrLoadModule('/src/components/SpendLimitField.tsx')
+  Field = fieldMod.default
+  saveAction = fieldMod.spendLimitSaveAction
   BrainSheet = (await vite.ssrLoadModule('/src/components/livChat/BrainSheet.tsx')).BrainSheet
   useBrainSettings = (await vite.ssrLoadModule('/src/components/livChat/useBrainSettings.ts')).useBrainSettings
   livChatStyles = (await vite.ssrLoadModule('/src/components/livChat/styles.ts')).livChatStyles
@@ -66,6 +68,29 @@ test('SpendLimitField: no provider/brand names in the copy', () => {
   assert.doesNotMatch(t, /claude|anthropic|openai|mistral|gemini/i)
 })
 
+test('SpendLimitField embedded: no own button/form; controlled draft; inline error', () => {
+  const html = renderToStaticMarkup(h(Field, {
+    embedded: true, limitUsd: 25, monthSpendUsd: 2, canEdit: true, draft: '$12.5', onDraftChange: () => {},
+    error: 'Enter a positive dollar amount, or leave blank for no limit.',
+  }))
+  assert.doesNotMatch(html, /<button|<form/)
+  assert.match(html, /value="\$12.5"/)
+  assert.match(html, /aria-invalid="true"/)
+  assert.match(html, /role="alert"[^>]*>Enter a positive dollar amount/)
+  assert.match(text(html), /Optional\. Blank = no limit\./)
+})
+
+test('spendLimitSaveAction: what the sheet Save does with the draft', () => {
+  const saved = { limitUsd: 25, canEdit: true }
+  assert.deepEqual(saveAction('25.00', saved), { kind: 'none' })
+  assert.deepEqual(saveAction('$25', saved), { kind: 'none' })           // value-equal = unchanged
+  assert.deepEqual(saveAction('$12.5', saved), { kind: 'save', value: 12.5 })
+  assert.deepEqual(saveAction('', saved), { kind: 'save', value: null })   // clear the limit
+  assert.deepEqual(saveAction('', { limitUsd: null, canEdit: true }), { kind: 'none' })
+  for (const bad of ['0', '-5', 'abc']) assert.equal(saveAction(bad, saved).kind, 'error', bad)
+  assert.deepEqual(saveAction('abc', { limitUsd: 25, canEdit: false }), { kind: 'none' }) // read-only never saves
+})
+
 // ── Brain sheet integration ──
 function adapterWith(spend?: unknown) {
   const ok = async () => ({ ok: true as const, value: { hasKey: true } })
@@ -106,6 +131,8 @@ test('BrainSheet with adapter.spend renders the spend section (loading until get
   // Section sits after the usage rows, before the sheet's Save button.
   assert.ok(t.indexOf('Balance') < t.indexOf('Monthly Spend Limit'))
   assert.ok(t.indexOf('Monthly Spend Limit') < t.lastIndexOf('Save'))
+  // One Save in the sheet: the embedded field has no "Save Limit" button.
+  assert.doesNotMatch(t, /Save Limit/)
   // Static render runs no effects, so get() is not called during render itself.
   assert.equal(gets, 0)
 })

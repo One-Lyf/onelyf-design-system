@@ -109,7 +109,9 @@ export {
 // agnostic tracking module (pricing table, limit check/record, store port). src/spend/index.ts is
 // also importable on its own (Deno edge fns import it by raw GitHub URL at a pinned commit).
 export {
-  default as SpendLimitField, spendMonthLine, spendLimitDraft, type SpendLimitFieldProps,
+  default as SpendLimitField, spendMonthLine, spendLimitDraft, spendLimitSaveAction,
+  type SpendLimitFieldProps, type SpendLimitFieldStandaloneProps, type SpendLimitFieldEmbeddedProps,
+  type SpendLimitSaveAction,
 } from './components/SpendLimitField'
 export {
   PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, pricingFor, estimateCostUsd,

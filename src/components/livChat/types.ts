@@ -218,15 +218,16 @@ export interface LivChatAdapter {
   // Optional monthly AI spend limit (BYOK). There is no platform key and no platform cap: the
   // key's OWNER may set an optional monthly USD limit, blank/null = no limit (the default), and
   // it also bounds household members the owner shares the key with. When present, the Brain
-  // sheet renders a SpendLimitField: it calls get() each time the sheet opens and setLimit() on
-  // "Save Limit" (then get() again to refresh). Absent → no spend UI at all. Renders only where
-  // the Brain sheet does (hat.enableKey !== false and adapter.key present).
+  // sheet renders an embedded SpendLimitField (no button of its own): it calls get() each time
+  // the sheet opens, and the sheet's single Save calls setLimit() once, only when the limit
+  // changed (an invalid entry shows inline and blocks the Save). Absent → no spend UI at all.
+  // Renders only where the Brain sheet does (hat.enableKey !== false and adapter.key present).
   //   get():      `limitUsd` null = no limit; `monthSpendUsd` = this UTC month's ESTIMATED spend
   //               on the key (src/spend's getSpendSummary); `canEdit` false when the user is on
   //               someone else's shared key (read-only; the organizer manages it). Reject on
   //               failure; the sheet shows a neutral load error.
   //   setLimit(): persist the limit (null clears it); the DS validates first (positive, cents).
-  //               Reject on failure; the field shows the error message.
+  //               Reject on failure; the error shows inline and the sheet stays open.
   // The server side (check before a call, record after) lives in src/spend (checkSpendLimit /
   // recordSpend), which is dependency-free so edge functions can import it directly.
   spend?: {
