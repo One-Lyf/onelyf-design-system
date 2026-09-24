@@ -1,6 +1,9 @@
 // ─── livChatStylesheet ─────────────────────────────────────────────────────────
 // Moved verbatim out of LivChat.tsx (W3 legibility refactor); re-exported from there.
-import { radius } from '../../tokens'
+import { radius, space } from '../../tokens'
+
+// Max width of the desktop reading column (composer width; see the >620px block below).
+const LC_COLUMN_MAX = 720
 
 // Interaction/animation CSS that inline styles can't express. Apps inject this
 // once (alongside themeStylesheet + componentStylesheet), same pattern as the
@@ -74,6 +77,23 @@ export const livChatStylesheet = `
   .lc-body[data-rail-open="true"] { grid-template-columns: 1fr; }
   .lc-body[data-rail-open="true"] .lc-main { display: none; }
   .lc-body[data-rail-open="true"] .lc-rail { max-height: 100%; overflow-y: auto; }
+}
+/* Desktop reading column. .lc-main is a flex item of the row-flex .lc-split with no flex-grow, so
+   on a wide card it shrank to its content's width and the chat filled ~1/3 of the card (hugging the
+   left edge). Above the phone breakpoint it now fills the split, and the transcript content + the
+   composer share one centered, readable column (composer <= 720px; the transcript's bubbles keep
+   their existing 12px bleed past the composer on each side, as on narrow cards). The transcript
+   itself stays full width so its scrollbar sits at the card edge; only its inline padding grows.
+   Percent padding resolves against .lc-main's width W: padding = xs + max(0, (W - 720px) / 2).
+   The artifact split's inline flex-basis still wins over the flex-grow here. Scoped to >620px so
+   phone layouts are untouched. */
+@media (min-width: 621px) {
+  .lc-main { flex: 1 1 auto; }
+  .lc-main > .lc-transcript {
+    padding-left: max(${space.xs}px, calc(50% - ${LC_COLUMN_MAX / 2}px + ${space.xs}px)) !important;
+    padding-right: max(${space.xs}px, calc(50% - ${LC_COLUMN_MAX / 2}px + ${space.xs}px)) !important;
+  }
+  .lc-composer { width: 100%; max-width: ${LC_COLUMN_MAX}px; margin-left: auto; margin-right: auto; box-sizing: border-box; }
 }
 /* Full-screen (maximize) dock state. position:fixed + inset:0 lift the card out of any host /
    LivDock box to cover the viewport — no host change needed. The z-index sits above the composer's

@@ -63,7 +63,7 @@ export function Composer({ S, hat, accent, adapter, draft, setDraft, files, setF
     filteredSlashTools, slashActiveIndex, selectSlashTool, runSlashPending,
   } = slash
   return (
-    <div style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm, flex: '0 0 auto' }}>
+    <div className="lc-composer" style={{ marginTop: space.sm, borderTop: `1px solid ${cssVar.border}`, paddingTop: space.sm, flex: '0 0 auto' }}>
       {files.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
           {files.map((f, i) => (
