@@ -18,7 +18,8 @@ import {
   ThemeToggle,
   LivChat, livChatStylesheet,
   type LivHat, type LivProposedAction, type LivActionQueue, type LivChatAction, type LivSlashTool,
-  type LivKeyInfo,
+  type LivKeyInfo, type LivSpendInfo,
+  createMemorySpendStore, getSpendSummary, spendMonth,
 } from '../src'
 import { cssVar } from '../src/theme'
 import {
@@ -117,6 +118,32 @@ function DockDemoPanel({ hat, adapter, actions }: {
   )
 }
 
+// Mock `adapter.spend` (optional monthly spend limit) for the full-screen dock panel's Brain
+// sheet, backed by the DS's own in-memory SpendStore. `?spend=` picks the scenario:
+//   (default) owner, $25.00 limit, $3.47 spent · `none` owner, no limit · `shared` household
+//   member on someone else's key (read-only) · `off` no adapter.spend at all (sheet as before).
+function createDemoSpend(): { get(): Promise<LivSpendInfo>; setLimit(limitUsd: number | null): Promise<void> } | null {
+  const mode = new URLSearchParams(window.location.search).get('spend')
+  if (mode === 'off') return null
+  const store = createMemorySpendStore()
+  const owner = 'demo-owner'
+  void store.addSpend(owner, spendMonth(), 3.47)
+  if (mode !== 'none') void store.setLimit(owner, 25)
+  const canEdit = mode !== 'shared'
+  return {
+    async get() {
+      await new Promise((r) => setTimeout(r, 250))
+      return { ...(await getSpendSummary(store, owner)), canEdit }
+    },
+    async setLimit(limitUsd) {
+      console.info('spend.setLimit', limitUsd) // lets a Playwright check count calls
+      await new Promise((r) => setTimeout(r, 400))
+      await store.setLimit(owner, limitUsd)
+    },
+  }
+}
+const demoSpend = createDemoSpend()
+
 function LivChatDemo() {
   const commis = useDemoActionQueue(commisReplyFor)
   const advisor = useDemoActionQueue(advisorReplyFor)
@@ -135,6 +162,7 @@ function LivChatDemo() {
         async get() { return { ok: true as const, value: keyInfo } },
         async set(patch: Partial<LivKeyInfo>) { keyInfo = { ...keyInfo, ...patch }; return { ok: true as const, value: keyInfo } },
       },
+      ...(demoSpend ? { spend: demoSpend } : {}),
     }
   }, [dockBackend])
   // Interrupt-a-turn harness: a slow word-by-word stream with a working Stop (abort) port, whose

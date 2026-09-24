@@ -79,6 +79,8 @@ export {
   // LivChatProps.slashTools; was missing from this barrel, so a consuming app couldn't
   // `import { type LivSlashTool }` without a deep import or NonNullable<...> workaround.
   type LivSlashTool, type LivSlashToolArg,
+  // adapter.spend.get() result (optional monthly spend limit in the Brain sheet).
+  type LivSpendInfo,
 } from './components/LivChat'
 // Artifact extraction (livchat-artifacts-system): LivChat detects/renders these inline as a
 // side panel already; exporting the extraction fn + type lets a consuming app (e.g. a Console
@@ -103,6 +105,20 @@ export {
 export {
   default as LivSuggestionField, type LivSuggestionFieldProps,
 } from './components/LivSuggestionField'
+// Monthly AI spend limit (BYOK, owner-set, optional): the settings field, plus the runtime-
+// agnostic tracking module (pricing table, limit check/record, store port). src/spend/index.ts is
+// also importable on its own (Deno edge fns import it by raw GitHub URL at a pinned commit).
+export {
+  default as SpendLimitField, spendMonthLine, spendLimitDraft, spendLimitSaveAction,
+  type SpendLimitFieldProps, type SpendLimitFieldStandaloneProps, type SpendLimitFieldEmbeddedProps,
+  type SpendLimitSaveAction,
+} from './components/SpendLimitField'
+export {
+  PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, pricingFor, estimateCostUsd,
+  spendMonth, formatUsd, normalizeSpendLimit, parseSpendLimitInput, SPEND_LIMIT_INPUT_ERROR, spendLimitMessage,
+  checkSpendLimit, recordSpend, getSpendSummary, createMemorySpendStore,
+  type SpendStore, type SpendCheck, type SpendClock, type SpendLimitInput, type MemorySpendStore,
+} from './spend/index.ts'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
 export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'

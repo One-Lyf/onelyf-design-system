@@ -11,6 +11,7 @@ import type { LivChatStyles } from './styles'
 import type { BrainSettings } from './useBrainSettings'
 import { usageCost } from './helpers'
 import { CloseI } from './icons'
+import { BrainSpendLimit, useBrainSpend } from './BrainSpendLimit'
 
 export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheetDragY, onBrainSheetHandlePointerDown, setMsg,
   activeId, messages, doCompact, tier, onTierChange, usage, lastTurn, daily }: {
@@ -38,6 +39,8 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
     showVerbosity, verbosityInput, setVerbosityInput, showCompact, compacting, autoCompact, setAutoCompact,
     costHintFor, saveKey,
   } = brain
+  // Optional monthly spend limit: inert (and unrendered) without adapter.spend.
+  const spend = useBrainSpend(adapter.spend)
   return (
     <div className="lc-sheet-scrim" onClick={() => setBrainOpen(false)}
       style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
@@ -252,7 +255,17 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
                 </div>
               )
             })()}
-        <button className="ds-btn" style={S.primaryBtn} onClick={async () => { await saveKey(); setBrainOpen(false); }}>Save</button>
+            {/* Optional monthly spend limit (BYOK owner-set cap). Only when the host wires
+                adapter.spend; otherwise nothing renders. Saved by the sheet's Save below. */}
+            {adapter.spend && <BrainSpendLimit state={spend} />}
+        <button className="ds-btn" style={S.primaryBtn} onClick={async () => {
+          // One Save for the whole sheet: an invalid spend-limit draft blocks it (error shown
+          // inline); a changed, valid limit is persisted alongside the key/model save.
+          if (adapter.spend && !spend.validate()) return
+          await saveKey()
+          if (adapter.spend && !(await spend.commit())) return
+          setBrainOpen(false)
+        }}>Save</button>
       </div>
     </div>
   )
