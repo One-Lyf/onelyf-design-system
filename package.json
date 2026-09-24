@@ -15,7 +15,12 @@
       "types": "./src/index.ts",
       "import": "./dist/onelyf-design-system.js"
     },
-    "./tokens": "./src/tokens.ts"
+    "./tokens": "./src/tokens.ts",
+    "./spend": {
+      "types": "./dist/spend/index.d.ts",
+      "import": "./dist/spend/index.js",
+      "default": "./dist/spend/index.js"
+    }
   },
   "files": [
     "dist",
@@ -23,9 +28,10 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:lib": "vite build",
-    "prepare": "vite build",
+    "build": "tsc -b && vite build && npm run build:spend",
+    "build:lib": "vite build && npm run build:spend",
+    "build:spend": "tsc -p tsconfig.spend.json",
+    "prepare": "vite build && npm run build:spend",
     "preview": "vite preview",
     "test": "node --test"
   },

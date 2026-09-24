@@ -1,0 +1,21 @@
+{
+  // Emits the dependency-free `onelyf-design-system/spend` subpath (dist/spend/*.js + .d.ts) so
+  // Node consumers (serverless api/*.js) can import spend tracking without the UI barrel/React.
+  // Run by `build` / `build:lib` / `prepare`. Not part of `tsc -b` (that one is typecheck-only).
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "types": [],
+    "rootDir": "src/spend",
+    "outDir": "dist/spend"
+  },
+  "files": ["src/spend/index.ts", "src/spend/pricing.ts"]
+}

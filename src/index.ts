@@ -107,17 +107,18 @@ export {
 } from './components/LivSuggestionField'
 // Monthly AI spend limit (BYOK, owner-set, optional): the settings field, plus the runtime-
 // agnostic tracking module (pricing table, limit check/record, store port). src/spend/index.ts is
-// also importable on its own (Deno edge fns import it by raw GitHub URL at a pinned commit).
+// also importable on its own: Deno edge fns by raw GitHub URL at a pinned commit, Node via the
+// dependency-free `onelyf-design-system/spend` subpath (no React/UI).
 export {
   default as SpendLimitField, spendMonthLine, spendLimitDraft, spendLimitSaveAction,
   type SpendLimitFieldProps, type SpendLimitFieldStandaloneProps, type SpendLimitFieldEmbeddedProps,
   type SpendLimitSaveAction,
 } from './components/SpendLimitField'
 export {
-  PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, pricingFor, estimateCostUsd,
+  PRICING_PER_MTOK, DEFAULT_PRICING_PER_MTOK, CACHE_WRITE_MULTIPLIER, CACHE_READ_MULTIPLIER, pricingFor, estimateCostUsd,
   spendMonth, formatUsd, normalizeSpendLimit, parseSpendLimitInput, SPEND_LIMIT_INPUT_ERROR, spendLimitMessage,
-  checkSpendLimit, recordSpend, getSpendSummary, createMemorySpendStore,
-  type SpendStore, type SpendCheck, type SpendClock, type SpendLimitInput, type MemorySpendStore,
+  SPEND_UNAVAILABLE_MESSAGE, checkSpendLimit, recordSpend, getSpendSummary, createMemorySpendStore,
+  type SpendStore, type SpendCheck, type SpendClock, type SpendLimitInput, type MemorySpendStore, type CacheTokens,
 } from './spend/index.ts'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
