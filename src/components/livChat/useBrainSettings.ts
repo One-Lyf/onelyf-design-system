@@ -2,9 +2,9 @@
 // Moved out of LivChat.tsx (W3 legibility refactor). State + the model-list memo + the key
 // load/save calls; no effects (LivChat's loadKey / listModels effects stay in LivChat.tsx at
 // their original positions and call into this).
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID, PROVIDER_FALLBACK_MODELS } from '../livChatModels'
+import { curateLivModels, ANTHROPIC_FALLBACK_MODELS, ANTHROPIC_FALLBACK_MODEL_ID, PROVIDER_FALLBACK_MODELS, modelsForProvider } from '../livChatModels'
 import type { LivModel } from '../livChatModels'
 import { DEFAULT_EFFORT, DEFAULT_MODE, isEffort, isMode, DEFAULT_VERBOSITY, isVerbosity } from '../livChatModes'
 import type { LivEffort, LivMode, LivVerbosity } from '../livChatModes'
@@ -15,12 +15,24 @@ export function useBrainSettings({ hat, adapter, setMsg }: {
   adapter: LivChatAdapter
   setMsg: Dispatch<SetStateAction<string>>
 }) {
-  const [liveModels, setLiveModels] = useState<LivModel[] | null>(null)
   const [providerInput, setProviderInput] = useState('anthropic')
-  const models = useMemo(
-    () => curateLivModels(liveModels ?? hat.models ?? PROVIDER_FALLBACK_MODELS[providerInput] ?? ANTHROPIC_FALLBACK_MODELS),
-    [liveModels, hat.models, providerInput],
-  )
+  // The live list remembers which provider it was fetched for, so a provider switch can never
+  // show (or let someone pick) the previous provider's models.
+  const [live, setLive] = useState<{ provider: string; models: LivModel[] } | null>(null)
+  const liveModels = live && live.provider === providerInput ? live.models : null
+  const setLiveModels = useCallback((next: LivModel[] | null, forProvider?: string) => {
+    setLive(next ? { provider: forProvider ?? providerInput, models: next } : null)
+  }, [providerInput])
+  // First non-empty of: the live list, the hat's list, the provider's fallback. Each is filtered to
+  // the active provider first, so a host's static list for one provider (e.g. Claude ids) never
+  // shows up as the choices on another provider's key.
+  const models = useMemo(() => {
+    for (const list of [liveModels, hat.models, PROVIDER_FALLBACK_MODELS[providerInput]]) {
+      const own = curateLivModels(modelsForProvider(providerInput, list))
+      if (own.length) return own
+    }
+    return curateLivModels(modelsForProvider(providerInput, ANTHROPIC_FALLBACK_MODELS))
+  }, [liveModels, hat.models, providerInput])
   // Resolves a model id's host-supplied cost hint (LivModel.costPerToken) for usageCost below —
   // see the tierFor/usageCost comment for why this matters for non-Anthropic models.
   const costHintFor = (id?: string | null) => models.find((m) => m.id === id)?.costPerToken

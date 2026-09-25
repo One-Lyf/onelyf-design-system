@@ -80,9 +80,15 @@ export interface LivModelSuggestion {
   reason: string
 }
 
+// A failed send's `error.code` is the backend's machine code for WHY. LivChat interprets one:
+// 'NO_KEY' (no key on file) opens the Brain sheet with an add-your-key prompt. Any other code
+// (the key was rejected, the model doesn't match the provider, a spend limit, …) shows
+// `error.message` as-is, so it must be user-facing. Without a code LivChat falls back to its old
+// guess (message 'NO_KEY', or a `detail` mentioning "key"). A failed message the backend didn't
+// save stays in the thread with a Retry.
 export type LivChatSendResult =
   | { ok: true; usage?: LivUsage; extras?: unknown; modelSuggestion?: LivModelSuggestion | null }
-  | { ok: false; error?: { message?: string; detail?: string }; extras?: unknown }
+  | { ok: false; error?: { message?: string; detail?: string; code?: string }; extras?: unknown }
 
 // livchat-agentic-workflows: a turn Liv runs in the background, outliving this chat turn instead
 // of streaming inline. `sendBackground` only kicks the work off (the model call hasn't

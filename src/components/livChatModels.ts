@@ -127,3 +127,44 @@ export function curateLivModels(
   }
   return out
 }
+
+// ─── Provider ownership ─────────────────────────────────────────────────────
+// Model-id families that clearly belong to one provider. Used only to keep another provider's
+// models out of the picker (a Claude list offered on a Mistral key is how a provider/model
+// mismatch got saved, Tummyful audit 2026-09-24). An id matching no family is not judged, and a
+// provider outside this map (a host's `custom` endpoint, which can serve anything) filters nothing.
+const MODEL_FAMILIES: [string, RegExp][] = [
+  ['anthropic', /^claude-/i],
+  ['openai', /^(gpt-|chatgpt-|o[1-9](-|$))/i],
+  ['mistral', /^(mistral-|open-mistral|magistral-|codestral-|pixtral-|ministral-|devstral-|voxtral-)/i],
+  ['gemini', /^(models\/)?gemini-/i],
+  ['perplexity', /^sonar/i],
+]
+
+// False only when `id` is recognizably another known provider's model.
+export function modelBelongsTo(provider: string, id: string | null | undefined): boolean {
+  if (!id || !MODEL_FAMILIES.some(([p]) => p === provider)) return true
+  const owner = MODEL_FAMILIES.find(([, re]) => re.test(id.trim()))?.[0]
+  return !owner || owner === provider
+}
+
+// `models` without the entries that are clearly another provider's.
+export function modelsForProvider(provider: string, models: LivModel[] | null | undefined): LivModel[] {
+  return (models ?? []).filter((m) => modelBelongsTo(provider, m?.id))
+}
+
+// The Brain picker's options and selected value. The SAVED model (what the key actually runs) is
+// always shown: when the list doesn't have it (an empty list, a model the list doesn't offer) it's
+// added as its raw id instead of the select silently showing the first option as if it were
+// saved. With nothing saved, the selection is the draft if it's listed, else the first option.
+// `show`: there is a choice to make, or a saved model to show (even as the only option).
+export function modelPickerState(models: LivModel[], saved: string | null | undefined, draft?: string | null):
+  { options: LivModel[]; value: string; savedMissing: boolean; show: boolean } {
+  // A saved excluded-class id (Fable/Mythos) is treated as unset: never offered, never selected.
+  const raw = saved?.trim() || ''
+  const savedId = raw && !DEFAULT_MODEL_EXCLUDE.test(raw) ? raw : ''
+  const savedMissing = !!savedId && !models.some((m) => m.id === savedId)
+  const options = savedMissing ? [{ id: savedId, label: savedId }, ...models] : models
+  const value = savedId || (draft && models.some((m) => m.id === draft) ? draft : models[0]?.id ?? '')
+  return { options, value, savedMissing, show: options.length > 1 || !!savedId }
+}

@@ -4,7 +4,7 @@
 import { radius, textStyle } from '../../tokens'
 import { cssVar } from '../../theme'
 import type { CSSProperties, Dispatch, PointerEvent as ReactPointerEvent, SetStateAction } from 'react'
-import { PROVIDER_LABELS, providerLabel, PROVIDER_FALLBACK_MODELS } from '../livChatModels'
+import { PROVIDER_LABELS, providerLabel, PROVIDER_FALLBACK_MODELS, modelBelongsTo, modelPickerState } from '../livChatModels'
 import { EFFORT_LEVELS, effortIndex, effortAtIndex, MODES, VERBOSITY_OPTIONS, DEFAULT_COMPACT_THRESHOLD } from '../livChatModes'
 import type { LivChatAdapter, LivHat, LivMessage, LivUsage } from './types'
 import type { LivChatStyles } from './styles'
@@ -41,6 +41,8 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
   } = brain
   // Optional monthly spend limit: inert (and unrendered) without adapter.spend.
   const spend = useBrainSpend(adapter.spend)
+  // The saved model is always what the picker shows (its raw id when the list lacks it).
+  const picker = modelPickerState(models, keyInfo.model, modelInput)
   return (
     <div className="lc-sheet-scrim" onClick={() => setBrainOpen(false)}
       style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
@@ -76,9 +78,13 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
                   setProviderInput(id)
                   setLiveModels(null)
                   const fallback = PROVIDER_FALLBACK_MODELS[id]
-                  if (fallback?.length) setModelInput(fallback[0].id)
-                  const r = await adapter.key!.set({ provider: id })
-                  if (r.ok) setKeyInfo((k) => ({ ...k, provider: id, hasKey: r.value?.hasKey ?? k.hasKey }))
+                  // The saved model stays only if the new provider could serve it. Another
+                  // provider's model (a Claude id on a Mistral key) is replaced in the same save,
+                  // so the switch never leaves a provider/model mismatch behind.
+                  const nextModel = modelBelongsTo(id, keyInfo.model) ? undefined : fallback?.[0]?.id
+                  if (fallback?.length) setModelInput(nextModel ?? fallback[0].id)
+                  const r = await adapter.key!.set(nextModel ? { provider: id, model: nextModel } : { provider: id })
+                  if (r.ok) setKeyInfo((k) => ({ ...k, provider: id, hasKey: r.value?.hasKey ?? k.hasKey, model: r.value?.model ?? nextModel ?? k.model }))
                   else setMsg(r.error?.message || 'Could not switch provider.')
                 }}>
                 {(keyInfo.availableProviders?.length
@@ -93,11 +99,11 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
                 placeholder={keyInfo.hasKey ? 'Replace key' : 'API key'}
                 value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
             </label>
-            {models.length > 1 && (
+            {picker.show && (
               <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <span style={{ ...textStyle('caption'), color: cssVar.mid }}>Model</span>
                 <select className="ds-input" style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
-                  value={keyInfo.model || modelInput}
+                  value={picker.value}
                   onChange={async (e) => {
                     const id = e.target.value
                     setModelInput(id)
@@ -105,7 +111,7 @@ export function BrainSheet({ S, hat, accent, adapter, brain, setBrainOpen, sheet
                     if (r.ok) setKeyInfo((k) => ({ ...k, model: id }))
                     else setMsg(r.error?.message || 'Could not switch model.')
                   }}>
-                  {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  {picker.options.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                 </select>
               </label>
             )}

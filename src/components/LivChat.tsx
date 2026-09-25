@@ -16,7 +16,7 @@
 // original order), the session/send logic, and the top-level layout. The pieces it composes
 // live in ./livChat/ (types, styles, hooks, and one file per visual block). Every public
 // export below is unchanged, so no consumer import moves.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { space, textStyle } from '../tokens'
 import { cssVar } from '../theme'
 import { partialTurnToAppend, type LivArtifact, type LivDocument } from './livChatComposer'
@@ -38,6 +38,7 @@ import { ChatHeader } from './livChat/ChatHeader'
 import { SessionRail } from './livChat/SessionRail'
 import { EmptyState } from './livChat/EmptyState'
 import { MessageBubble } from './livChat/MessageBubble'
+import { sendFailureNotice, sentMessageSaved } from './livChat/sendFailure'
 import { LiveTurnBubble } from './livChat/LiveTurnBubble'
 import { ModelSuggestionCard } from './livChat/ModelSuggestionCard'
 import { ActionCardStack } from './livChat/ActionCardStack'
@@ -78,6 +79,9 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
   const [sessions, setSessions] = useState<LivSession[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<LivMessage[]>([])
+  // The user message whose send failed and that the backend didn't save: held in the thread
+  // (its optimistic bubble) with a Retry under it, until retried, superseded or left.
+  const [failedTurn, setFailedTurn] = useState<{ id: string; sessionId: string; text: string; files: File[] } | null>(null)
   const [urls, setUrls] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -289,17 +293,23 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
   // open, once) so we don't spend a call on chats where the user never touches the picker. A
   // failed/empty result leaves liveModels null → the curated fallback stays. curateLivModels in
   // the `models` memo drops Fable/Mythos + relabels, so we can trust the raw list here.
+  // Asked for the provider that is SAVED (keyInfo.provider), and only once it matches the one
+  // picked: mid-switch, the backend still answers for the old provider, and that list must not
+  // be taken as the new one's (it's tagged with the provider it was fetched for either way).
+  const savedProvider = keyInfo.provider ?? brain.providerInput
   useEffect(() => {
     if (!brainOpen || liveModels || !adapter.key?.listModels) return
+    if (savedProvider !== brain.providerInput) return
+    const forProvider = savedProvider
     let cancelled = false
     ;(async () => {
       try {
         const r = await adapter.key!.listModels!()
-        if (!cancelled && r.ok && r.value?.models?.length) setLiveModels(r.value.models)
+        if (!cancelled && r.ok && r.value?.models?.length) setLiveModels(r.value.models, forProvider)
       } catch (e) { console.error('key.listModels failed', e) }
     })()
     return () => { cancelled = true }
-  }, [brainOpen, liveModels, adapter.key])
+  }, [brainOpen, liveModels, adapter.key, savedProvider, brain.providerInput, setLiveModels])
 
   // Report chat state to a persistent host (LivDock) so its bubble can show an unread dot / thinking
   // pulse. thinking = a turn is in flight (sending) or streaming in. No-op when onState is omitted.
@@ -401,7 +411,7 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
       userAbortedRef.current = true
       try { adapter.chat.abort() } catch (e) { console.error('adapter.chat.abort threw', e) }
     }
-    setActive(id); setMessages([]); setStreaming(''); setRailOpen(false)
+    setActive(id); setMessages([]); setStreaming(''); setRailOpen(false); setFailedTurn(null)
     // A message from the just-abandoned session shouldn't keep reading aloud into the newly
     // opened one.
     stopPlayingMessage()
@@ -461,6 +471,10 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
     // Fresh send — any prior abort flag from an earlier turn is stale, don't let it silence
     // a legitimate error this turn.
     userAbortedRef.current = false
+    // A new send supersedes an earlier unsent message's Retry (retryFailed clears it first).
+    setFailedTurn(null)
+    // What the thread held before this send, to tell whether the backend saved the new message.
+    const idsBefore = new Set(messages.map((m) => m.id))
     // The user just sent a turn — jump to and follow the newest message even if they'd scrolled
     // up to re-read earlier (the auto-follow effect only scrolls when pinned).
     pinnedRef.current = true
@@ -476,6 +490,8 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
     // Declared out here (not inside the try) so the catch/abort path can also read whatever text
     // streamed in before a mid-stream Stop — see partialTurnToAppend below.
     let acc = ''
+    // Set once the optimistic bubble is in the thread, so a failure can hold it with Retry.
+    let sent: { id: string; files: File[] } | null = null
 
     try {
       if (!sessionId) {
@@ -501,6 +517,7 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
         setMessages((m) => [...m, optimistic])
         setUrls((u) => ({ ...u, ...Object.fromEntries(sentFiles.map((f, i) => [localPath(i), URL.createObjectURL(f)])) }))
       }
+      sent = { id: tmpId, files: sentFiles }
       setDraft(''); setFiles([])
       if (fileRef.current) fileRef.current.value = ''
 
@@ -523,6 +540,7 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
       }
 
       if (stillActive()) { setStreaming(''); setToolActivity(null) }
+      let failed = false
       const res = await adapter.chat.send({ sessionId, text, files: sentFiles }, (chunk) => {
         if (!stillActive()) return
         if (typeof chunk === 'string') { acc += chunk; setStreaming(acc) }
@@ -545,16 +563,22 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
           // per adapter (some resolve with {ok:false, error:{message:'ABORT'}} instead of throwing),
           // and painting a "couldn't reply" banner for something the user just told us to cancel
           // reads as a failure they didn't cause.
-          const em = res.error?.message
-          if (em === 'NO_KEY' || res.error?.detail?.toLowerCase().includes('key')) {
-            if (showKey) setBrainOpen(true)
-            setMsg('Add your API key so Liv can reply. Your message is saved either way.')
-          } else {
-            setMsg(em || "Liv couldn't reply.")
-          }
+          // The status line is decided after the reload below: its add-key copy depends on
+          // whether the backend saved the message.
+          failed = true
         }
       }
       const r = await adapter.messages.list(sessionId)
+      // A failed send the backend didn't save stays in the thread (the optimistic bubble, not
+      // sent) with a Retry, instead of vanishing on this reload.
+      let holdFailed = false
+      if (stillActive() && failed && !res.ok) {
+        const saved = r.ok && sentMessageSaved(r.value.messages, idsBefore, text)
+        holdFailed = !saved
+        const notice = sendFailureNotice(res.error, saved)
+        if (notice.noKey && showKey) setBrainOpen(true)
+        setMsg(notice.text)
+      }
       if (stillActive() && r.ok) {
         // If the user hit Stop mid-stream, keep the partial reply that already arrived (matching
         // Claude — the text you already got stays). Appended to the SERVER-reloaded list, with a
@@ -562,8 +586,13 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
         // doesn't produce a second identical bubble.
         const partial = partialTurnToAppend(userAbortedRef.current, acc, r.value.messages,
           () => `partial-${sessionId}-${Math.round(performance.now())}`)
-        const next = partial ? [...r.value.messages, partial] : r.value.messages
+        const next = partial ? [...r.value.messages, partial] : holdFailed ? [...r.value.messages, optimistic] : r.value.messages
         setMessages(next); resolveUrls(next)
+      }
+      if (holdFailed) {
+        setFailedTurn({ id: tmpId, sessionId, text, files: sentFiles })
+        loadSessions()
+        return // keep the local previews: the held bubble still shows them
       }
       // Auto-compact: once this session's cumulative tokens cross the threshold, summarize it down.
       // `usage` is the running total BEFORE this turn; add this turn's tokens for the new total.
@@ -607,9 +636,28 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
           })
         } else {
           setMsg((e as Error)?.message || 'Something went wrong sending your message. Please try again.')
+          // The optimistic bubble is still in the thread (nothing reloaded over it): offer Retry.
+          if (sent && sessionId) setFailedTurn({ id: sent.id, sessionId, text, files: sent.files })
         }
       }
     } finally { setSending(false) }
+  }
+
+  // Retry a message that didn't send: drop its held bubble (and previews) and send it again.
+  function retryFailed() {
+    const f = failedTurn
+    if (!f || sending || activeIdRef.current !== f.sessionId) return
+    setFailedTurn(null)
+    setMessages((m) => m.filter((x) => x.id !== f.id))
+    setUrls((u) => {
+      const prefix = `local:${f.id}:`
+      const stale = Object.keys(u).filter((k) => k.startsWith(prefix))
+      if (!stale.length) return u
+      const next = { ...u }
+      for (const k of stale) { URL.revokeObjectURL(next[k]); delete next[k] }
+      return next
+    })
+    void send(f.text, f.files)
   }
 
   async function copyMessage(id: string, text?: string | null) {
@@ -692,10 +740,22 @@ export default function LivChat({ hat, adapter, keyNonce, onState, onMinimize, o
               // `sending`, so a change only re-renders the rows it actually affects.
               const isLast = m.id === lastMessageId
               const isPlaying = playingId === m.id
-              return (
+              const bubble = (
                 <MessageBubble key={m.id} S={S} m={m} isLast={isLast} sendingLast={isLast && sending} urls={urls}
                   isPlaying={isPlaying} highlightRange={isPlaying ? highlightRange : null}
                   isCopied={copiedId === m.id} {...bubbleHandlers} />
+              )
+              if (failedTurn?.id !== m.id) return bubble
+              // The message that didn't send stays in the thread with a Retry under it.
+              return (
+                <Fragment key={m.id}>
+                  {bubble}
+                  <div className="lc-unsent" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: space.sm, margin: `2px 0 ${space.sm}px` }}>
+                    <span style={S.muted}>Not sent</span>
+                    <button type="button" className="ds-btn" style={S.ghostBtn} disabled={sending}
+                      onClick={retryFailed} aria-label="Retry sending this message">Retry</button>
+                  </div>
+                </Fragment>
               )
             })}
             {(streaming || toolActivity) && (
