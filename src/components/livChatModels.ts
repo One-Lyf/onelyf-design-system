@@ -160,7 +160,9 @@ export function modelsForProvider(provider: string, models: LivModel[] | null | 
 // `show`: there is a choice to make, or a saved model to show (even as the only option).
 export function modelPickerState(models: LivModel[], saved: string | null | undefined, draft?: string | null):
   { options: LivModel[]; value: string; savedMissing: boolean; show: boolean } {
-  const savedId = saved?.trim() || ''
+  // A saved excluded-class id (Fable/Mythos) is treated as unset: never offered, never selected.
+  const raw = saved?.trim() || ''
+  const savedId = raw && !DEFAULT_MODEL_EXCLUDE.test(raw) ? raw : ''
   const savedMissing = !!savedId && !models.some((m) => m.id === savedId)
   const options = savedMissing ? [{ id: savedId, label: savedId }, ...models] : models
   const value = savedId || (draft && models.some((m) => m.id === draft) ? draft : models[0]?.id ?? '')

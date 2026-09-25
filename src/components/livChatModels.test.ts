@@ -167,3 +167,10 @@ test('modelPickerState shows the saved model as-is when the list lacks it, never
   assert.equal(modelPickerState(mistral, null, 'claude-haiku-4-5').value, 'mistral-large-latest')
   assert.deepEqual(modelPickerState([], null), { options: [], value: '', savedMissing: false, show: false })
 })
+
+test('modelPickerState never re-adds a saved Fable/Mythos id as an option', () => {
+  const st = modelPickerState([{ id: 'mistral-large-latest', label: 'Large' }], 'claude-fable-5-1')
+  assert.equal(st.options.some((m) => /fable/i.test(m.id)), false)
+  assert.equal(st.savedMissing, false)
+  assert.equal(st.value, 'mistral-large-latest')
+})
