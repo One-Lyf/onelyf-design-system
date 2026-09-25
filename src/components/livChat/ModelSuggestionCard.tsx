@@ -17,7 +17,7 @@ export function ModelSuggestionCard({ accent, adapter, pendingSuggestion, setPen
   setProviderInput: Dispatch<SetStateAction<string>>
   setModelInput: Dispatch<SetStateAction<string>>
   setKeyInfo: Dispatch<SetStateAction<LivKeyInfo>>
-  setLiveModels: Dispatch<SetStateAction<LivModel[] | null>>
+  setLiveModels: (models: LivModel[] | null, forProvider?: string) => void
   setMsg: Dispatch<SetStateAction<string>>
 }) {
   return (

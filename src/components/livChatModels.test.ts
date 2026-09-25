@@ -123,3 +123,47 @@ test('providerLabel: vendor names for known ids, Title Case for unknown ones (e.
   assert.equal(providerLabel('custom'), 'Custom')
   assert.equal(providerLabel(''), '')
 })
+
+import { modelBelongsTo, modelsForProvider, modelPickerState } from './livChatModels.ts'
+
+test('modelBelongsTo flags only ids that are clearly another provider\'s', () => {
+  assert.equal(modelBelongsTo('mistral', 'claude-haiku-4-5'), false)
+  assert.equal(modelBelongsTo('mistral', 'gpt-5'), false)
+  assert.equal(modelBelongsTo('anthropic', 'mistral-large-latest'), false)
+  assert.equal(modelBelongsTo('mistral', 'mistral-large-latest'), true)
+  assert.equal(modelBelongsTo('mistral', 'magistral-medium-latest'), true)
+  assert.equal(modelBelongsTo('mistral', 'some-future-model'), true)
+  assert.equal(modelBelongsTo('mistral', ''), true)
+  assert.equal(modelBelongsTo('custom', 'claude-sonnet-4-6'), true)
+  assert.equal(modelBelongsTo('gemini', 'models/gemini-2.5-pro'), true)
+})
+
+test('modelsForProvider drops another provider\'s models (a Claude list on a Mistral key)', () => {
+  assert.deepEqual(modelsForProvider('mistral', ANTHROPIC_FALLBACK_MODELS), [])
+  assert.deepEqual(modelsForProvider('mistral', PROVIDER_FALLBACK_MODELS.mistral), PROVIDER_FALLBACK_MODELS.mistral)
+  assert.deepEqual(modelsForProvider('anthropic', ANTHROPIC_FALLBACK_MODELS), ANTHROPIC_FALLBACK_MODELS)
+  assert.deepEqual(modelsForProvider('custom', ANTHROPIC_FALLBACK_MODELS), ANTHROPIC_FALLBACK_MODELS)
+  assert.deepEqual(modelsForProvider('mistral', null), [])
+  // Every provider's own fallback list survives its own filter.
+  for (const [p, list] of Object.entries(PROVIDER_FALLBACK_MODELS)) assert.deepEqual(modelsForProvider(p, list), list, p)
+})
+
+test('modelPickerState shows the saved model as-is when the list lacks it, never the first option in its place', () => {
+  const mistral = PROVIDER_FALLBACK_MODELS.mistral
+  // Empty list: the saved id is the one option.
+  assert.deepEqual(modelPickerState([], 'mistral-medium-2508'), { options: [{ id: 'mistral-medium-2508', label: 'mistral-medium-2508' }], value: 'mistral-medium-2508', savedMissing: true, show: true })
+  // A one-model list with that model saved: shown (it says what runs), not hidden as "no choice".
+  assert.equal(modelPickerState([{ id: 'llama3', label: 'llama3' }], 'llama3').show, true)
+  assert.equal(modelPickerState([{ id: 'llama3', label: 'llama3' }], null).show, false)
+  // Listed: unchanged.
+  assert.deepEqual(modelPickerState(mistral, 'mistral-small-latest'), { options: mistral, value: 'mistral-small-latest', savedMissing: false, show: true })
+  // Not listed: prepended, selected.
+  const s = modelPickerState(mistral, 'claude-haiku-4-5')
+  assert.equal(s.value, 'claude-haiku-4-5')
+  assert.deepEqual(s.options[0], { id: 'claude-haiku-4-5', label: 'claude-haiku-4-5' })
+  assert.equal(s.options.length, mistral.length + 1)
+  // Nothing saved: a listed draft, else the first option; a stale draft from another list is ignored.
+  assert.equal(modelPickerState(mistral, null, 'mistral-small-latest').value, 'mistral-small-latest')
+  assert.equal(modelPickerState(mistral, null, 'claude-haiku-4-5').value, 'mistral-large-latest')
+  assert.deepEqual(modelPickerState([], null), { options: [], value: '', savedMissing: false, show: false })
+})
