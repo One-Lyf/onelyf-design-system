@@ -26,7 +26,7 @@ export const LIV_VOICE = {
     model: 'eleven_v3',
     /** eleven_v3 audio tags, prefixed to the text. The film's delivery. */
     direction: '[warmly] [clearly]',
-    /** eleven_v3 takes stability 0 (creative), 0.5 (natural) or 1 (robust); the film used natural. */
+    /** eleven_v3 takes stability 0 (creative), 0.5 (natural) or 1 (robust). */
     settings: { stability: 0.5, similarity_boost: 0.75 },
   },
   live: {
