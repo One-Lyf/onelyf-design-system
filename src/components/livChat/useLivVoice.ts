@@ -58,7 +58,7 @@ export function useLivVoice({ adapter, draft, setDraft, send, onHandsFreeChange,
   async function speak(text: string) {
     if (!text.trim()) return
     try {
-      if (adapter.voice?.speak) { await adapter.voice.speak(text); return }
+      if (adapter.voice?.speak) { await adapter.voice.speak(text, { surface: 'live' }); return }  // Hands-free: a live turn
       const synth = typeof window !== 'undefined' ? window.speechSynthesis : undefined
       if (synth) { synth.cancel(); synth.speak(new SpeechSynthesisUtterance(text)) }
     } catch (e) { console.error('speak failed', e) }
@@ -78,7 +78,7 @@ export function useLivVoice({ adapter, draft, setDraft, send, onHandsFreeChange,
     stopPlayingMessage()
     setPlayingId(id)
     if (adapter.voice?.speak) {
-      adapter.voice.speak(text).catch((e) => console.error('voice.speak failed', e))
+      adapter.voice.speak(text, { surface: 'readAloud' }).catch((e) => console.error('voice.speak failed', e))
         .finally(() => setPlayingId((cur) => (cur === id ? null : cur)))
       return
     }
