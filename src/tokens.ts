@@ -100,7 +100,7 @@ export const spaceList: Space[] = Object.values(spaces)
 // The seven domains that sit as nodes around Liv, clockwise from the top, each with a woven
 // patch emblem (<SpaceEmblem>). Family is deliberately absent: it's a tier, not a branch.
 export type BranchKey = Exclude<SpaceKey, 'family'>
-export const branchOrder: BranchKey[] = ['finlyf', 'homlyf', 'hlthlyf', 'gudlyf', 'wrklyf', 'skoollyf', 'waves']
+export const branchOrder = ['finlyf', 'homlyf', 'hlthlyf', 'gudlyf', 'wrklyf', 'skoollyf', 'waves'] as const satisfies readonly BranchKey[]
 export const branchList: Space[] = branchOrder.map((k) => spaces[k])
 
 // ── Spacing ─────────────────────────────────────────────────────────────────

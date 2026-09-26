@@ -26,10 +26,6 @@ def gud_kite(col):
     tail=Strand(join(cubic((0,.3),(-.14,.4),(.14,.46),(.02,.56))),w=.7)
     bow='<path d="M-.09,.39 L.09,.47 L.09,.39 L-.09,.47 Z" fill="INK"/>'
     return render([frame,v,h,tail],[],col,order=[1,2,0,3])
-SET=[('FinLyf','Coin pouch',lyf_emblems2.fin_pouch,'#c08a14'),('HomLyf','Crossed-gable hearth',lyf_emblems.hom,'#bf6b49'),
-     ('HlthLyf','Twined heart-leaf',lyf_emblems.hlth,'#6f9270'),('GudLyf','Kite',gud_kite,'#5d648f'),
-     ('WrkLyf','Crossed tools',wrk_tools,'#b36c42'),('SkoolLyf','Lamp & book',lyf_emblems.skl,'#6f8090'),('Family','Kin rings',lyf_emblems.fam,'#8d6b52')]
-ALT=[('WrkLyf','Alt: Briefcase',wrk_case,'#b36c42')]
 def disc_svg(fn,col,size,outline='#1c2b21'):
     c=size/2; r=size*.46; body,_=fn(col)
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}"><circle cx="{c}" cy="{c}" r="{r}" fill="{col}" stroke="{outline}" stroke-width="{size*.03:.1f}"/>'
@@ -44,7 +40,6 @@ def wrk_toolbox(col):
 def waves_braid(col):
     f=lambda sg:(lambda t:(-.62+1.24*t, sg*.2*math.sin(2*math.pi*1.5*t)*(1-.35*abs(2*t-1))))
     A=Strand([f(1)(i/200) for i in range(201)],w=.9); B=Strand([f(-1)(i/200) for i in range(201)],w=.9)
-    C=Strand(line((-.5,.42),(.5,.42)),w=.6)
     return render([A,B],[],col)
 def waves_curl(col):
     th=[i/160 for i in range(161)]
@@ -57,4 +52,3 @@ WAVES='#2f7fa8'
 SET2=[('FinLyf','Coin pouch',lyf_emblems2.fin_pouch,'#c08a14'),('HomLyf','Crossed-gable hearth',lyf_emblems.hom,'#bf6b49'),
       ('HlthLyf','Twined heart-leaf',lyf_emblems.hlth,'#6f9270'),('GudLyf','Kite',gud_kite,'#5d648f'),
       ('WrkLyf','Toolbox',wrk_toolbox,'#b36c42'),('SkoolLyf','Lamp & book',lyf_emblems.skl,'#6f8090'),('Waves','Braided waveform',waves_braid,WAVES)]
-ALT2=[('Waves','Alt: Curling wave',waves_curl,WAVES)]

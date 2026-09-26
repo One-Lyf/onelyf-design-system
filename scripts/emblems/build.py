@@ -16,7 +16,7 @@ for name,title,fn,col in SET2:
 live=open(os.path.join(ROOT,'src','assets','glyph-live.svg')).read()
 lit=live.replace('fill="#724213"','fill="#c9964a"')   # the bronze reads too dark on night grounds
 A=os.path.join(ROOT,'src','assets')
-open(os.path.join(A,'onelyf-mark-light.svg'),'w').write(mark(512,None,'#1c2b21',live,'#a97b0c',with_bg=False))
+open(os.path.join(A,'onelyf-mark-light.svg'),'w').write(mark(512,None,'#1c2b21',live,'#8a630e',with_bg=False))
 open(os.path.join(A,'onelyf-mark-dark.svg'),'w').write(mark(512,None,'#e8e4d6',lit,'#d8a83c',with_bg=False))
 open(os.path.join(A,'onelyf-app-icon.svg'),'w').write(mark(512,'#171b16','#e8e4d6',lit,'#d8a83c'))
 print('wrote', len(SET2), 'emblems + 3 marks')
