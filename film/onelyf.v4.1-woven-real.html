@@ -1,0 +1,437 @@
+<!doctype html>
+<meta charset="utf-8">
+<link href="fonts/fraunces.css" rel="stylesheet">
+<title>onelyf — woven, real</title>
+<style>
+  body{margin:0;background:#111;color:#ccc;font:13px/1.4 ui-monospace,Menlo,monospace;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px}
+  canvas#c{width:min(92vw,720px);height:auto;background:#000;box-shadow:0 0 0 1px #333}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+  button{background:#222;color:#ddd;border:1px solid #444;padding:4px 10px;cursor:pointer;font:inherit}
+  input[type=range]{width:320px}
+</style>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script src="core.js"></script>
+<script src="assets.js"></script>
+<script>
+'use strict';
+// ============================================================
+// ONELYF — WOVEN PROTOTYPE, REAL (v4.1, 2026-09-26)
+// The v4.0 style test pushed toward real embroidery (House of the Dragon season 2 titles), no needle,
+// with the working thread shown. Same scene, camera, timing and root geometry as v4.0 / v3.4; only
+// the materials change:
+//   cloth    linen woven thread by thread: every float a small shaded cylinder, per-thread tone,
+//            slubs, mottling, a vignette
+//   thread   every stitch drawn as thread: contact shadow, round shading lit from the top left,
+//            the twist of its plies, and a sheen that depends on which way the stitch lies
+//   glyph    real satin: stitches laid ACROSS each strand (along the inward normal of the glyph's
+//            outline), so the light catches the strands differently as they turn
+//   roots    stem stitch in that thread; while a root is being sewn its working thread comes up out
+//            of the cloth at the last stitch and hangs loose, lifted (its shadow drifts off it), and
+//            is pulled back through when the root is done
+//   hyphae   twisted gold cord, tied down with dark couching stitches; the main cords' loose ends
+//            run ahead of the couching
+// ============================================================
+
+usePalette(makePalette({
+  paper: '#f4efe1', paperBand: null, ink: '#1c2b21', night: '#171b16',
+  chalk: '#e8e4d6', chalkDim: '#767c6c', guide: 'rgba(31,90,60,.30)',
+  fills: ['#c08a14'], shade: '#5e6c60', light: '#fffdf7', blush: '#c08a14',
+  accents: ['#c08a14'], inks: ['#1c2b21'], finish: 'flat',
+}));
+
+// threads, each as dark (the shaded side) / mid (body) / hi (where the light catches it)
+const GOLD = { dark: '#4a300a', mid: '#b07f2a', hi: '#f3d38a' };
+const TIE = { dark: '#140e04', mid: '#3d2b0f', hi: '#7a5d32' };
+const CHALK = { dark: '#2c3029', mid: '#6b7162', hi: '#b3b8a8' };
+const LIGHT = Math.atan2(-.8, -.6);          // the light comes from the top left
+
+const SPACES = [
+  { key: 'finlyf' }, { key: 'homlyf' }, { key: 'hlthlyf' }, { key: 'gudlyf' },
+  { key: 'wrklyf' }, { key: 'skoollyf' }, { key: 'waves' },
+];
+const A = window.ONELYF_ASSETS;
+const img = src => { const i = new Image(); i.src = src; return i; };
+const svgText = uri => { const k = uri.indexOf(','); return uri.slice(0, k).includes(';base64') ? atob(uri.slice(k + 1)) : decodeURIComponent(uri.slice(k + 1)); };
+SPACES.forEach(sp => { sp.img = img(A.emblems[sp.key]); });
+const GLYPH_THREAD = img('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText(A.liveNight).replace(/<circle[^>]*url\(#liv\)[^>]*\/>/, '')));
+
+const ORBIT = 330, LIV_H = 270, HYPHAE_AT = 3.5, DUR = HYPHAE_AT + 2.2;
+
+// ===================== THREAD =====================
+// one stitch of thread from (x0, y0) to (x1, y1), w wide. sheen scales how much light it catches.
+function threadSeg(c, x0, y0, x1, y1, w, T, twist = true, sheen = 1) {
+  const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || .001, ux = dx / L, uy = dy / L;
+  let px = -uy, py = ux;
+  if (px * Math.cos(LIGHT) + py * Math.sin(LIGHT) < 0) { px = -px; py = -py; }   // p points at the light
+  c.lineCap = 'round';
+  c.strokeStyle = 'rgba(0,0,0,.42)'; c.lineWidth = w * 1.1;
+  c.beginPath(); c.moveTo(x0 + w * .35, y0 + w * .5); c.lineTo(x1 + w * .35, y1 + w * .5); c.stroke();
+  c.strokeStyle = T.dark; c.lineWidth = w;
+  c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.strokeStyle = mix(T.dark, T.mid, clamp(.55 + .45 * sheen, 0, 1)); c.lineWidth = w * .64;
+  c.beginPath(); c.moveTo(x0 + px * w * .1, y0 + py * w * .1); c.lineTo(x1 + px * w * .1, y1 + py * w * .1); c.stroke();
+  c.strokeStyle = alpha(T.hi, .25 + .7 * sheen); c.lineWidth = w * .2;
+  c.beginPath(); c.moveTo(x0 + px * w * .24, y0 + py * w * .24); c.lineTo(x1 + px * w * .24, y1 + py * w * .24); c.stroke();
+  if (twist && w > 1.4) {                                                // the plies: an S twist
+    c.strokeStyle = alpha(T.dark, .55); c.lineWidth = Math.max(.45, w * .11);
+    c.beginPath();
+    for (let d = w * .4; d < L - w * .2; d += w * .85) {
+      const x = x0 + ux * d, y = y0 + uy * d;
+      c.moveTo(x - px * w * .48 - ux * w * .3, y - py * w * .48 - uy * w * .3); c.lineTo(x + px * w * .48 + ux * w * .3, y + py * w * .48 + uy * w * .3);
+    }
+    c.stroke();
+  }
+}
+// how much light a satin stitch lying at angle a catches: most when it lies across the light
+const sheenAt = a => .35 + .65 * Math.abs(Math.sin(a - LIGHT));
+
+// point and direction at distance d along a polyline with cumulative lengths
+function along(pts, cum, d) {
+  let i = 1; while (i < pts.length - 1 && cum[i] < d) i++;
+  const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], seg = cum[i] - cum[i - 1] || 1, t = clamp((d - cum[i - 1]) / seg, 0, 1);
+  return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, (x1 - x0) / seg, (y1 - y0) / seg];
+}
+// stem stitch: short overlapping stitches along the line, each leaning off it. Whole stitches only.
+function stemStitch(c, pts, cum, vis, widthAt, st, seed) {
+  const r = rng(seed), n = Math.floor(vis / st);
+  for (let k = 0; k < n; k++) {
+    const a = k * st, b = Math.min(vis, a + st * 1.4), w = widthAt(a);
+    const [x0, y0, dx, dy] = along(pts, cum, a), [x1, y1] = along(pts, cum, b);
+    const lean = (k % 2 ? 1 : -1) * w * .25 + (r() - .5) * w * .15;
+    threadSeg(c, x0 + dy * lean, y0 - dx * lean, x1 - dy * lean, y1 + dx * lean, w, GOLD, true, sheenAt(Math.atan2(dy, dx)) * (.85 + r() * .3));
+  }
+  return n * st;
+}
+// a loose working thread: comes up through the cloth at (x, y) heading (dx, dy), lifts off it and
+// hangs in a lazy curve. The higher it is off the cloth, the further its shadow falls from it.
+function looseThread(c, x, y, dx, dy, len, w, sway, T, al = 1) {
+  if (len < 2 || al <= .01) return;
+  const a0 = Math.atan2(dy, dx), pts = [];
+  for (let j = 0; j <= 16; j++) {
+    const t = j / 16, a = a0 + sway * t * 2.2 + Math.sin(t * 3 + sway) * .35;
+    const prev = pts[j - 1] || [x, y]; const seg = len / 16;
+    pts.push(j ? [prev[0] + Math.cos(a) * seg, prev[1] + Math.sin(a) * seg] : [x, y]);
+  }
+  c.save(); c.globalAlpha = al; c.lineCap = 'round';
+  // its shadow on the cloth: soft, and further from the thread the higher the thread is
+  c.filter = `blur(${1.2 * S}px)`; c.strokeStyle = 'rgba(0,0,0,.5)'; c.lineWidth = w;
+  c.beginPath(); pts.forEach(([px, py], j) => { const h = Math.pow(j / 16, 1.1) * len * .45; j ? c.lineTo(px + h * .55, py + h * .8) : c.moveTo(px, py); }); c.stroke();
+  c.filter = 'none';
+  for (let j = 1; j < pts.length; j++) { c.globalAlpha = al * (1 - .5 * j / 16); threadSeg(c, pts[j - 1][0], pts[j - 1][1], pts[j][0], pts[j][1], w, T, true, 1); }
+  c.restore();
+}
+// couched cord: two plies twisted into a cord, laid on the cloth and tied down with dark stitches
+function cord(c, pts, cum, vis, widthAt, seed) {
+  if (vis <= 0) return;
+  const r = rng(seed);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for (let pass = 0; pass < 2; pass++) {                                // shadow, then the cord body
+    for (let i = 1; i < pts.length && cum[i - 1] < vis; i++) {
+      const e = along(pts, cum, Math.min(cum[i], vis)), w = widthAt(cum[i - 1]);
+      c.strokeStyle = pass ? GOLD.dark : 'rgba(0,0,0,.45)'; c.lineWidth = pass ? w : w * 1.15;
+      const o = pass ? [0, 0] : [w * .4, w * .6];
+      c.beginPath(); c.moveTo(pts[i - 1][0] + o[0], pts[i - 1][1] + o[1]); c.lineTo(e[0] + o[0], e[1] + o[1]); c.stroke();
+    }
+  }
+  // the plies: each twist is a short lit lozenge across the cord
+  for (let d = 0; d < vis; d += 1) {
+    const w = widthAt(d), step = Math.max(2.2, w * .75);
+    if ((d % step) >= 1) continue;
+    const [x, y, dx, dy] = along(pts, cum, d), hw = w / 2;
+    let px = -dy, py = dx; if (px * Math.cos(LIGHT) + py * Math.sin(LIGHT) < 0) { px = -px; py = -py; }
+    const sh = sheenAt(Math.atan2(dy, dx));
+    c.strokeStyle = mix(GOLD.dark, GOLD.mid, .5 + .5 * sh); c.lineWidth = step * .62;
+    c.beginPath(); c.moveTo(x - px * hw * .8 - dx * hw * .45, y - py * hw * .8 - dy * hw * .45); c.lineTo(x + px * hw * .8 + dx * hw * .45, y + py * hw * .8 + dy * hw * .45); c.stroke();
+    c.strokeStyle = alpha(GOLD.hi, .35 + .6 * sh); c.lineWidth = Math.max(.5, step * .2);
+    c.beginPath(); c.moveTo(x + px * hw * .15 + dx * hw * .05, y + py * hw * .15 + dy * hw * .05); c.lineTo(x + px * hw * .7 + dx * hw * .4, y + py * hw * .7 + dy * hw * .4); c.stroke();
+  }
+  // couching ties
+  for (let d = 6 + r() * 6; d < vis; d += 14 + r() * 6) {
+    const [x, y, dx, dy] = along(pts, cum, d), hw = widthAt(d) / 2 + 1.8;
+    threadSeg(c, x + dy * hw, y - dx * hw, x - dy * hw, y + dx * hw, 1.3, TIE, false, .6);
+  }
+}
+// running stitch around a circle
+function runningRing(c, x, y, rad, T, al, seed, st = 9, gap = 7, w = 2.2) {
+  if (al <= .01 || rad < 2) return;
+  const n = Math.max(6, Math.round(TAU * rad / (st + gap))), off = rng(seed)() * TAU;
+  c.save(); c.globalAlpha = al;
+  for (let k = 0; k < n; k++) {
+    const a0 = off + k / n * TAU, a1 = a0 + st / rad;
+    threadSeg(c, x + Math.cos(a0) * rad, y + Math.sin(a0) * rad, x + Math.cos(a1) * rad, y + Math.sin(a1) * rad, w, T, w > 1.9, sheenAt((a0 + a1) / 2 + Math.PI / 2));
+  }
+  c.restore();
+}
+// French knots: little wrapped knots of gold, each a lit dome with its wraps showing
+function frenchKnots(c, x, y, R, rays, seed, g) {
+  const r = rng(seed);
+  for (let k = 0; k < rays; k++) {
+    const a = k / rays * TAU + (r() - .5) * .2, n = 6 + (r() * 6 | 0);
+    for (let j = 1; j <= n; j++) {
+      const d = R * g * j / n * (.9 + r() * .2), s = 1.8 + r() * 1.4, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d, rot = r() * TAU;
+      c.globalAlpha = .95 - j / n * .45;
+      c.fillStyle = 'rgba(0,0,0,.45)'; c.beginPath(); c.arc(px + s * .45, py + s * .6, s * 1.05, 0, TAU); c.fill();
+      const gr = c.createRadialGradient(px - s * .35, py - s * .4, s * .1, px, py, s);
+      gr.addColorStop(0, GOLD.hi); gr.addColorStop(.55, GOLD.mid); gr.addColorStop(1, GOLD.dark);
+      c.fillStyle = gr; c.beginPath(); c.arc(px, py, s, 0, TAU); c.fill();
+      c.strokeStyle = alpha(GOLD.dark, .6); c.lineWidth = .5;
+      c.beginPath(); c.arc(px, py, s * .55, rot, rot + 2.2); c.moveTo(px + Math.cos(rot + 3) * s * .8, py + Math.sin(rot + 3) * s * .8); c.arc(px, py, s * .8, rot + 3, rot + 4.8); c.stroke();
+    }
+  }
+  c.globalAlpha = 1;
+}
+
+// ===================== CLOTH =====================
+// linen, thread by thread: a plain-weave tile where every float is a small shaded cylinder, then
+// tiled with low-frequency mottling and slubs over it so the repeat doesn't show.
+let LINEN = null;
+function makeLinen(base, seed) {
+  const r = rng(seed), p = 4.5, n = 40, T = p * n, q = 2;           // 40 threads to the tile
+  const tile = document.createElement('canvas'); tile.width = tile.height = T * q;
+  const t = tile.getContext('2d'); t.scale(q, q); t.fillStyle = shade(base, .35); t.fillRect(0, 0, T, T);
+  const warp = Array.from({ length: n }, () => mix(base, r() < .5 ? '#000000' : '#6b7162', r() * .22));
+  const weft = Array.from({ length: n }, () => mix(base, r() < .5 ? '#000000' : '#6b7162', r() * .22));
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const over = (i + j) % 2 === 0, x = i * p, y = j * p;              // warp over weft on the even cells
+    const col = over ? warp[i] : weft[j];
+    const gr = over ? t.createLinearGradient(x, 0, x + p, 0) : t.createLinearGradient(0, y, 0, y + p);
+    gr.addColorStop(0, tint(col, .12)); gr.addColorStop(.35, col); gr.addColorStop(1, shade(col, .45));
+    t.fillStyle = gr;
+    t.beginPath(); t.roundRect(x + (over ? p * .1 : 0), y + (over ? 0 : p * .1), over ? p * .8 : p, over ? p : p * .8, p * .35); t.fill();
+  }
+  const L = layer(), g = L.getContext('2d'); g.setTransform(S, 0, 0, S, 0, 0);
+  const pat = g.createPattern(tile, 'repeat'); pat.setTransform(new DOMMatrix().scale(1 / q));
+  g.fillStyle = pat; g.fillRect(0, 0, W, H);
+  for (let k = 0; k < 26; k++) {                                        // mottling
+    const x = r() * W, y = r() * H, rad = 120 + r() * 260, gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, alpha(r() < .5 ? '#000000' : '#8a9080', .05 + r() * .06)); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  for (let k = 0; k < 40; k++) {                                        // slubs: a thicker stretch of weft
+    const y = Math.round(r() * H / p) * p + p * .5, x0 = r() * W, len = 40 + r() * 160;
+    g.strokeStyle = alpha('#8a9080', .10 + r() * .08); g.lineWidth = p * .9; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x0, y); g.lineTo(x0 + len, y); g.stroke();
+  }
+  g.strokeStyle = alpha('#a4aa98', .10); g.lineWidth = .5;              // loose fibres
+  for (let k = 0; k < 900; k++) { const x = r() * W, y = r() * H, a = r() * TAU, l = 3 + r() * 7; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a + 1) * l * .6, y + Math.sin(a + 1) * l * .6, x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+  return L;
+}
+
+// ===================== GLYPH IN SATIN =====================
+// Satin stitches laid across the strands: from every edge point, a stitch runs along the inward
+// normal of the outline until it leaves the shape. Built once at 4x, clipped to the glyph.
+let GLYPH_SATIN = null;
+function makeSatin(im, w, h, q = 4) {
+  const m = document.createElement('canvas'); m.width = w; m.height = h;
+  const mg = m.getContext('2d'); mg.drawImage(im, 0, 0, w, h);
+  const px = mg.getImageData(0, 0, w, h).data, M = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) M[i] = px[i * 4 + 3] / 255;
+  const B = new Float32Array(M), tmp = new Float32Array(w * h), rad = 3;   // box blur, twice, for smooth normals
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < h; y++) { let s = 0; for (let x = -rad; x < w; x++) { if (x + rad < w) s += B[y * w + x + rad]; if (x - rad - 1 >= 0) s -= B[y * w + x - rad - 1]; if (x >= 0) tmp[y * w + x] = s / (2 * rad + 1); } }
+    for (let x = 0; x < w; x++) { let s = 0; for (let y = -rad; y < h; y++) { if (y + rad < h) s += tmp[(y + rad) * w + x]; if (y - rad - 1 >= 0) s -= tmp[(y - rad - 1) * w + x]; if (y >= 0) B[y * w + x] = s / (2 * rad + 1); } }
+  }
+  const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h && M[(y | 0) * w + (x | 0)] > .5;
+  const hash = new Map(), cell = 2, gap = 1.25, stitches = [];
+  const near = (x, y) => { const cx = Math.floor(x / cell), cy = Math.floor(y / cell); for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) for (const [qx, qy] of hash.get((cx + i) + ',' + (cy + j)) || []) if (Math.hypot(qx - x, qy - y) < gap) return true; return false; };
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    if (!inside(x, y) || (inside(x + 1, y) && inside(x - 1, y) && inside(x, y + 1) && inside(x, y - 1))) continue;
+    const gx = B[y * w + x + 1] - B[y * w + x - 1], gy = B[(y + 1) * w + x] - B[(y - 1) * w + x], gn = Math.hypot(gx, gy);
+    if (gn < 1e-4 || near(x, y)) continue;
+    const nx = gx / gn, ny = gy / gn; let t = 0;
+    while (t < 40 && inside(x + .5 + nx * (t + .5), y + .5 + ny * (t + .5))) t += .5;
+    if (t < 2) continue;
+    const k = Math.floor(x / cell) + ',' + Math.floor(y / cell); if (!hash.has(k)) hash.set(k, []); hash.get(k).push([x, y]);
+    stitches.push([x + .5, y + .5, x + .5 + nx * t, y + .5 + ny * t]);
+  }
+  const L = document.createElement('canvas'); L.width = w * q; L.height = h * q;
+  const g = L.getContext('2d'); g.scale(q, q);
+  const r = rng(77);
+  g.lineCap = 'butt';
+  for (const [x0, y0, x1, y1] of stitches) {
+    const sh = sheenAt(Math.atan2(y1 - y0, x1 - x0)) * (.92 + r() * .16);
+    g.strokeStyle = mix(GOLD.dark, GOLD.mid, clamp(.35 + .65 * sh, 0, 1)); g.lineWidth = 1.7;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.strokeStyle = alpha(GOLD.hi, .15 + .65 * sh * sh); g.lineWidth = .7;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, ux = (x1 - x0) * .32, uy = (y1 - y0) * .32;
+    g.beginPath(); g.moveTo(mx - ux, my - uy); g.lineTo(mx + ux, my + uy); g.stroke();
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'destination-in';
+  const grown = document.createElement('canvas'); grown.width = w * q; grown.height = h * q;   // the mask, a hair fatter so edges keep their stitch ends
+  const gg = grown.getContext('2d'); gg.filter = `blur(${q * .6}px)`; gg.drawImage(im, 0, 0, w * q, h * q); gg.filter = 'none'; gg.drawImage(im, 0, 0, w * q, h * q);
+  g.drawImage(grown, 0, 0);
+  // outline: the satin sits inside a darker split-stitch edge (the silhouette, dilated by ~1.3 units)
+  const O = document.createElement('canvas'); O.width = w * q; O.height = h * q; const og = O.getContext('2d');
+  for (let a = 0; a < TAU; a += TAU / 12) og.drawImage(im, Math.cos(a) * 1.3 * q, Math.sin(a) * 1.3 * q, w * q, h * q);
+  og.globalCompositeOperation = 'source-in'; og.fillStyle = GOLD.dark; og.fillRect(0, 0, w * q, h * q);
+  og.globalCompositeOperation = 'source-over'; og.drawImage(L, 0, 0);
+  return O;
+}
+
+// ===================== ROOTS (v3.4 geometry) =====================
+// Same seeded generator as v3.4: a rounded dome under the glyph, stubs' tips, irregular strands.
+const ROOT_TIPS = [
+  [88, 474, 165], [124, 497, 125], [157, 542, 118], [109, 565, 130], [75, 568, 150], [119, 576, 112],
+  [153, 590, 105], [183, 600, 95], [210, 585, 82], [250, 619, 96], [274, 675, 90], [300, 619, 84],
+  [340, 584, 98], [366, 600, 85], [397, 591, 75], [394, 542, 62], [431, 576, 68], [472, 568, 30],
+  [416, 507, 55], [461, 471, 15],
+];
+const ROOT_DOME = { x: 274, y: 470, rx: 400, ry: 390 };
+const domeR = (x, y) => Math.hypot((x - ROOT_DOME.x) / ROOT_DOME.rx, (y - ROOT_DOME.y) / ROOT_DOME.ry);
+const angTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+const RSTRANDS = (() => {
+  const r = rng(404), out = [];
+  const reachAt = (s, u) => u <= 0 ? 0 : Math.min(s.len, s.v * u + s.A * (Math.sin(s.w * u + s.ph) - Math.sin(s.ph)));
+  const toEdge = (x, y, a) => { let d = 0; while (domeR(x + Math.cos(a) * d, y + Math.sin(a) * d) < 1 && d < 900) d += 4; return d; };
+  function strand(x, y, a, len, w0, depth, t0, v) {
+    const pts = [[x, y]], cum = [0], edge = .93 + r() * .1;
+    let ang = a, curv = (r() - .5) * .05, L = 0;
+    while (L < len) {
+      curv = clamp((curv + (r() - .5) * .04) * .93, -.07, .07);
+      ang += curv + (r() - .5) * .1;
+      if (r() < .012) ang += (r() - .5) * .6;
+      ang += angTo(ang, Math.atan2(y - 443, x - 274)) * [.035, .02, .01, .005][depth];
+      if (y < 470) ang += angTo(ang, Math.PI / 2) * .3;
+      const st = 7 * (.7 + r() * .6);
+      x += Math.cos(ang) * st; y += Math.sin(ang) * st; L += st;
+      pts.push([x, y]); cum.push(L);
+      if (domeR(x, y) > edge) break;
+    }
+    const w = TAU * (.7 + r() * .9);
+    const s = { pts, cum, len: L, w0, t0, v, w, A: .6 * v / w, ph: r() * TAU, seed: out.length + 900, depth };
+    out.push(s);
+    if (depth >= 3 || pts.length < 6) return;
+    const nb = Math.floor(r() * [3, 2.4, 1.6][depth]) + (depth === 0 ? 1 : 0);
+    for (let k = 0; k < nb; k++) {
+      const i = 2 + Math.floor(r() * (pts.length * .8 - 2)), f = cum[i] / L;
+      let u = 0; while (reachAt(s, u) < cum[i]) u += .02;
+      const side = r() < .5 ? -1 : 1, da = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+      strand(pts[i][0], pts[i][1], da + side * (.35 + r() * .8), (L - cum[i]) * (.3 + r() * .6) + r() * 30,
+        w0 * (1 - .55 * f) * (.55 + r() * .25), depth + 1, t0 + u + r() * .2, v * (.8 + r() * .3));
+    }
+  }
+  for (const [x, y, deg] of ROOT_TIPS) {
+    const a = deg * Math.PI / 180 + (r() - .5) * .3, len = toEdge(x, y, a) * (.9 + r() * .15);
+    strand(x, y, a, len, 9 + r() * 5, 0, .7 + r() * .35, len / (2.4 + r() * .5));
+  }
+  out.forEach(s => { s.reachAt = u => reachAt(s, u); let u = 0; while (reachAt(s, u) < s.len - .01) u += .02; s.tEnd = s.t0 + u; s.sway = r() * TAU; });
+  return out;
+})();
+
+// ===================== HYPHAE (design-system asset, read as cords) =====================
+// hyphaeNight is 58 strands, each a <g> of short segments with their own stroke widths.
+const HYPHAE = (() => {
+  const doc = new DOMParser().parseFromString(svgText(A.hyphaeNight), 'image/svg+xml');
+  return [...doc.querySelectorAll('g')].map(g => {
+    const pts = [], ws = [];
+    g.querySelectorAll('path').forEach((p, k) => {
+      const n = p.getAttribute('d').match(/-?[\d.]+/g).map(Number);
+      if (!k) pts.push([n[0], n[1]]);
+      pts.push([n[2], n[3]]); ws.push(+p.getAttribute('stroke-width'));
+    });
+    const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const op = +g.getAttribute('stroke-opacity');
+    return { pts, cum, len: cum[cum.length - 1], ws, op };
+  }).filter(h => h.pts.length > 1);
+})();
+// how far along a hypha the gold has run when the reveal radius is R (reveal spreads out from the core)
+function hyphaReach(h, R) {
+  let d = 0; for (let i = 1; i < h.pts.length; i++) { if (Math.hypot(h.pts[i][0] - CX, h.pts[i][1] - CY) > R) break; d = h.cum[i]; } return d;
+}
+
+// ===================== THE SCENE =====================
+function sceneLivReal(c, tau) {
+  resetT(c); c.fillStyle = PAL.night; c.fillRect(0, 0, W, H);
+  cam(c, CX, CY, lerp(1.0, 1.16, sm(0, DUR, tau)));
+  c.drawImage(LINEN, -60, -60, W + 120, H + 120);
+
+  runningRing(c, CX, CY, 520, CHALK, .9, 12, 10, 8, 1.8);
+  runningRing(c, CX, CY, ORBIT, CHALK, .9, 13, 12, 9, 1.8);
+
+  // transfer lines: the pattern drawn on the cloth before it's sewn
+  c.save(); c.setLineDash([2.5, 4]); c.lineCap = 'round';
+  for (const h of HYPHAE) { c.strokeStyle = alpha('#c9ccbd', .08 + .14 * h.op); c.lineWidth = 1; c.beginPath(); h.pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); }
+  c.restore();
+
+  const g = sm(HYPHAE_AT, HYPHAE_AT + 2.0, tau, easeOut), R = 40 + 440 * g;
+  if (g > .02) {
+    runningRing(c, CX, CY, 90 * g, GOLD, .75 * g, 46, 8, 6, 2.4);
+    runningRing(c, CX, CY, 170 * g, GOLD, .65 * g, 47, 8, 6, 2.2);
+    runningRing(c, CX, CY, 255 * g, GOLD, .55 * g, 48, 8, 6, 2);
+    HYPHAE.forEach((h, k) => {
+      const reach = hyphaReach(h, R), wAt = d => { let i = 1; while (i < h.pts.length - 1 && h.cum[i] < d) i++; return 1.4 + h.ws[i - 1] * 1.05; };
+      cord(c, h.pts, h.cum, reach, wAt, 300 + k);
+      if (h.op >= .8 && reach > 0 && reach < h.len - 4) {             // the main cords' loose ends, ahead of the couching
+        const [x, y, dx, dy] = along(h.pts, h.cum, reach);
+        looseThread(c, x, y, dx, dy, 38, wAt(reach) * .9, Math.sin(tau * 1.7 + k) * .5, GOLD, 1);
+      }
+    });
+    frenchKnots(c, CX, CY, 340, 22, 44, g);
+  }
+
+  // the seven branches: woven patches, sewn on, lit from the top left; ringed in cord once lit
+  SPACES.forEach((sp, k) => {
+    const a = -Math.PI / 2 + k / SPACES.length * TAU, x = CX + Math.cos(a) * ORBIT, y = CY + Math.sin(a) * ORBIT, S2 = 82 / .46;
+    c.save(); c.shadowColor = 'rgba(0,0,0,.6)'; c.shadowBlur = 10 * S; c.shadowOffsetX = 3 * S; c.shadowOffsetY = 4.5 * S;
+    c.drawImage(sp.img, x - S2 / 2, y - S2 / 2, S2, S2); c.restore();
+    c.save(); c.beginPath(); c.arc(x, y, 82 * .92, 0, TAU); c.clip();
+    const lg = c.createLinearGradient(x - 70, y - 70, x + 70, y + 70);
+    lg.addColorStop(0, 'rgba(255,248,230,.16)'); lg.addColorStop(.5, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,.22)');
+    c.fillStyle = lg; c.fillRect(x - 82, y - 82, 164, 164); c.restore();
+    const lit = clamp((g - .75) * 3.4, 0, 1);
+    if (lit > 0) {
+      const n = 60, sweep = lit * TAU, pts = [], cum = [0];
+      for (let j = 0; j <= n; j++) { const t = -Math.PI / 2 + k * .9 + sweep * j / n; pts.push([x + Math.cos(t) * 90, y + Math.sin(t) * 90]); if (j) cum.push(cum[j - 1] + 90 * sweep / n); }
+      cord(c, pts, cum, cum[n], () => 4.4, 700 + k);
+    }
+  });
+
+  // Liv: light under the embroidery, the glyph in satin, the roots sewn out of its stubs
+  const h = LIV_H, w = h * 549 / 748, X = CX - w * 274 / 549, Y = CY - h * 443 / 748, k = h / 748;
+  const glow = c.createRadialGradient(CX, CY, 0, CX, CY, 149 * k * 1.4);
+  glow.addColorStop(0, 'rgba(255,250,240,.95)'); glow.addColorStop(.2, 'rgba(255,211,94,.8)'); glow.addColorStop(.55, 'rgba(232,154,28,.35)'); glow.addColorStop(1, 'rgba(192,138,20,0)');
+  c.fillStyle = glow; c.beginPath(); c.arc(CX, CY, 149 * k * 1.4, 0, TAU); c.fill();
+  c.save(); c.translate(X, Y); c.scale(k, k);
+  const tails = [];
+  for (const s of RSTRANDS) {
+    const vis = s.reachAt(tau - s.t0); if (vis <= 0) continue;
+    const sewn = stemStitch(c, s.pts, s.cum, vis, d => s.w0 * (1 - .7 * d / Math.max(vis, 1)) * Math.min(1, .5 + vis / 300), 15, s.seed);
+    // the working thread: up through the cloth at the last stitch; pulled back through once the root is done
+    const pull = s.depth === 0 && s.seed % 2 === 0 ? (tau < s.tEnd ? 1 : 1 - clamp((tau - s.tEnd) / .35, 0, 1)) : 0;
+    if (pull > 0 && sewn > 0) { const [x, y, dx, dy] = along(s.pts, s.cum, sewn); tails.push([x, y, dx, dy, s, pull]); }
+  }
+  for (const [x, y, dx, dy, s, pull] of tails) looseThread(c, x, y, dx, dy, 230 * pull, s.w0 * .5, Math.sin(tau * 1.3 + s.sway) * .6, GOLD, 1);
+  c.restore();
+  c.save(); c.shadowColor = 'rgba(0,0,0,.65)'; c.shadowBlur = 5 * S; c.shadowOffsetX = 1.8 * S; c.shadowOffsetY = 2.6 * S;
+  c.drawImage(GLYPH_SATIN, X, Y, w, h); c.restore();
+  c.save(); c.globalCompositeOperation = 'screen'; c.globalAlpha = .32; c.fillStyle = glow; c.beginPath(); c.arc(CX, CY, 149 * k * 1.4, 0, TAU); c.fill(); c.restore();
+
+  // vignette: the cloth falls away into shadow at the edges
+  resetT(c); const vg = c.createRadialGradient(CX, CY, 360, CX, CY, 800);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)'); c.fillStyle = vg; c.fillRect(0, 0, W, H);
+}
+
+// ===================== SCORE (v3.4's liv section, from 0) =====================
+function score(ac, t0, dest) {
+  const out = ac.createGain(); out.gain.value = .55; out.connect(dest);
+  const bus = ac.createGain(), dry = ac.createGain(), wet = ac.createGain(), echoMix = .30;
+  dry.gain.value = 1 - echoMix; wet.gain.value = echoMix;
+  const dl = ac.createDelay(1.0); dl.delayTime.value = .375;
+  const fb = ac.createGain(); fb.gain.value = .28;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  bus.connect(dry); dry.connect(out);
+  bus.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(out);
+  const N = (f, t, d, type, g) => note(ac, bus, f, t0, t, d, type, g);
+  N(pentHz(-1, 4), 0, DUR, 'sine', .26);
+  [1.0, 2.5, 4.0].forEach((t, k) => N(pentHz(-1, k), t, 1.8, 'sine', .11));
+  [0, 2, 4].forEach((s, k) => N(pentHz(1, s), k * 0.25, 1.6, 'sine', .14));
+  noiseBurst(ac, bus, t0, 0, .35, .16, 77);
+}
+
+Promise.all([...SPACES.map(sp => sp.img), GLYPH_THREAD].map(i => i.decode()).concat(document.fonts.load('96px Fraunces')))
+  .then(() => {
+    LINEN = makeLinen(PAL.night, 21);
+    GLYPH_SATIN = makeSatin(GLYPH_THREAD, 549, 748, 4);
+    defineFilm({ timeline: [{ name: 'liv-woven-real', dur: DUR, fn: sceneLivReal }], score, format: { ar: '1:1' } });
+  });
+</script>
