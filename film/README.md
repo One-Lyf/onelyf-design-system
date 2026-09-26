@@ -7,6 +7,7 @@ The 1:1 brand film, drawn on a canvas. Each `onelyf.vX.Y.html` is one cut; the n
 | `onelyf.vX.Y.html` | the film: brief, beat sheet, scenes, timeline, score |
 | `core.js` | hand-drawn canvas core: palettes, marks, camera, timeline runtime, player |
 | `assets.js` | design-system art as data URIs (emblems, Liv glyph, hyphae), so the canvas never taints |
+| `liv-vo-3.js` | the v4.8 script re-voiced on eleven_v3 with delivery tags, nurturing rather than sultry (v4.9+) |
 | `liv-vo-2.js` | the second voice-over script (v4.8+): opens on the OneLyf thesis, three passages kept whole |
 | `liv-vo.js` | Liv's voice-over (ElevenLabs "Mother" voice, one take) as a data URI, with where each line sits in the take; the score places the lines (v4.7+) |
 | `fonts/` | Fraunces (SIL Open Font License), served locally so renders don't depend on Google Fonts |
