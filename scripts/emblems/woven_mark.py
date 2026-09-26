@@ -42,6 +42,14 @@ GROUNDS = {
 
 f1 = lambda v: f'{v:.1f}'.rstrip('0').rstrip('.')
 
+# The branch patches are PERSISTENT assets (src/assets/emblems/*.svg), not regenerated: the woven
+# mark embeds each file's embroidered body as shipped, so it always matches the emblems apps use.
+def emblem_body(name):
+    s = open(os.path.join(ROOT, 'src', 'assets', 'emblems', f'{name.lower()}.svg')).read()
+    m = re.search(r'<g transform="translate\([\d.]+ [\d.]+\) scale\([\d.]+\)">(.*)</g></svg>\s*$', s, re.S)
+    if not m: raise ValueError(f'unexpected emblem layout: {name}')
+    return m.group(1)
+
 # ---- linen ----
 def linen_defs(pid, base, seed, spread, gap, p=2.8, n=16):
     """A plain-weave tile: each float a tone of the ground, shaded as a cylinder by a repeating
@@ -197,7 +205,7 @@ def woven_mark(ground, size=512, S=SET2):
     o.append(satin_glyph(f'gl{ground[0]}', g['glyph_file'], c, c, size * .43, g['glyph'], g['shadow'],
                          glow=g['glyph']['hi'] if g['lit'] else None, s=s))
     for (x, y), (name, title, fn, col) in zip(pts, S):
-        body, _ = fn(col)
+        body = emblem_body(name)
         o.append(f'<circle cx="{f1(x + 2 * s)}" cy="{f1(y + 3 * s)}" r="{f1(r * 1.02)}" fill="{g["shadow"]}" fill-opacity=".5"/>')
         o.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{col}" stroke="{shade(col, .45)}" stroke-width="{size * .006:.2f}"/>')
         o.append(f'<g transform="translate({x:.1f} {y:.1f}) scale({r * .98:.2f})">{body}</g>')

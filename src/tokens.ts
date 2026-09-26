@@ -87,7 +87,7 @@ export const spaces: Record<SpaceKey, Space> = {
   hlthlyf:  { key: 'hlthlyf',  label: 'HlthLyf',  accent: '#6f9270', accentName: 'sage',       status: 'building' },
   gudlyf:   { key: 'gudlyf',   label: 'GudLyf',   accent: '#5d648f', accentName: 'indigo',     status: 'building' },
   wrklyf:   { key: 'wrklyf',   label: 'WrkLyf',   accent: '#b36c42', accentName: 'copper',     status: 'building' },
-  skoollyf: { key: 'skoollyf', label: 'SkoolLyf', accent: '#6f8090', accentName: 'blue-gray',  status: 'planned' },
+  skoollyf: { key: 'skoollyf', label: 'SkoolLyf', accent: '#6f8090', accentName: 'blue-gray',  status: 'building' },
   waves:    { key: 'waves',    label: 'Waves',    accent: '#2f7fa8', accentName: 'sea blue',   status: 'live' },
   // Family is an audience TIER that runs across every branch, not a branch of its own. It keeps
   // an accent for tier/plan UI (e.g. Family plan management) but has no emblem and no ring seat.

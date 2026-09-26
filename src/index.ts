@@ -125,7 +125,7 @@ export {
 } from './spend/index.ts'
 export { default as JunctionCard, type JunctionCardProps } from './components/JunctionCard'
 export { default as SpaceNode, type SpaceNodeProps } from './components/SpaceNode'
-export { SpaceEmblem, OneLyfMark, ONELYF_TAGLINE, EMBLEM_URLS, EMBLEM_NAMES, MARK_URLS, type SpaceEmblemProps, type OneLyfMarkProps, type OneLyfMarkVariant } from './components/SpaceEmblem'
+export { SpaceEmblem, OneLyfMark, ONELYF_TAGLINE, EMBLEM_URLS, EMBLEM_NAMES, MARK_URLS, LOCKUP_URLS, type OneLyfLockup, type SpaceEmblemProps, type OneLyfMarkProps, type OneLyfMarkVariant } from './components/SpaceEmblem'
 export { default as ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle'
 export {
   default as AppShell,
