@@ -8,10 +8,11 @@
 //                        (favicon, tiny UI).
 //   variant="rooted"   → "Rooted Connection" brand-board variant (Section B.5):
 //                        same crown knot and junction as live, roots extending
-//                        into a fuller mycelium cascade. Used for the Liv
+//                        out of its stubs into a rounded dome (the brand film's
+//                        roots since 2026-09-26, scripts/gen-liv-roots.mjs). Used for the Liv
 //                        Console v1 app icon — AND, since 2026-09-17, as the
-//                        artwork the THINKING state animates: `live` has only
-//                        short root stubs, so there is nothing deep to grow.
+//                        roots the THINKING state grows (LivGlyphGrow): `live`
+//                        has only short root stubs, so there is nothing deep to grow.
 //                        See onelyf-planning/docs/liv-motion-canon.md.
 //
 // VECTOR marks, traced from the approved GPT brand board (crisp at any size;
