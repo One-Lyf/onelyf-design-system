@@ -1,0 +1,789 @@
+<!doctype html>
+<meta charset="utf-8">
+<link href="fonts/fraunces.css" rel="stylesheet">
+<title>onelyf — woven</title>
+<style>
+  body{margin:0;background:#111;color:#ccc;font:13px/1.4 ui-monospace,Menlo,monospace;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px}
+  canvas#c{width:min(92vw,720px);height:auto;background:#000;box-shadow:0 0 0 1px #333}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+  button{background:#222;color:#ddd;border:1px solid #444;padding:4px 10px;cursor:pointer;font:inherit}
+  input[type=range]{width:320px}
+</style>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script src="core.js"></script>
+<script src="assets.js"></script>
+<script src="liv-vo-5.js"></script>
+<script>
+'use strict';
+// ============================================================
+// ONELYF — "Many Spaces, Woven Together", WOVEN (v4.12, 2026-09-26)
+// The whole film as real embroidery on linen, after the House of the Dragon season 2 titles; no
+// needle, the working thread shown. Same beats, timing, camera and score as v3.4. The liv scene is
+// the v4.1 prototype, with the loose threads drawing in and out instead of appearing, the cords
+// running out continuously, and every branch fully ringed in cord before the scene ends.
+// v4.3: the cut to night is dye soaking through the cloth (was v3.4's ink blot), and Liv's crest
+// holds one size through the day scenes (the night glyph's), instead of growing into it.
+// v4.4: the cords grow along their length at the roots' pace instead of a fast wipe out from the
+// core, so the liv scene runs 5.7 s -> ~11 s (the film ~21 s). Each branch is ringed as its cord arrives.
+// v4.5: no cut back to day at the end. The camera pulls back and lifts off the finished embroidery, and
+// the title and tagline are sewn in beneath it, on the night cloth.
+// v4.6: the score never goes silent. A soft chord bed runs under the whole film, low and filtered so a
+// voice-over sits on top of it, with faint stitch ticks while things are sewn and a chime per branch.
+// v4.7: Liv narrates (ElevenLabs "Mother", liv-vo.js), each line placed on its beat, the music ducking
+// 9 dB under her. The sign-off holds 0.8 s longer so the tagline can finish.
+// v4.8: a new script that opens on the OneLyf thesis (liv-vo-2.js), read as three whole passages with
+// Liv's own pauses rather than six cut lines; the title and tagline sew in 0.5 s earlier to meet her.
+// v4.9: the same voice on eleven_v3 with delivery tags (liv-vo-3.js), nurturing rather than sultry; the
+// slower read starts the thesis at 0.3 s and the Liv passage at 9.4 s.
+// v4.10: the same take with the throat-clear cut out and de-essed (liv-vo-4.js); the thesis starts at 0.8 s again.
+// v4.11: the second cough, right before "I'm Liv", cut out too (liv-vo-5.js).
+// v4.12: a remix. Liv's voice was ~19 LU over the ducked music; now she sits ~10 LU over it, gently
+// compressed, with the music up and ducking less. The Liv passage starts after the click before "I'm".
+// Colours are the OneLyf design-system tokens (onelyf-design-system/src/tokens.ts), as threads.
+// No lettering anywhere but the sign-off (house rule).
+// ============================================================
+
+// ===================== BEAT SHEET =====================
+// t     dur   scene      camera    what changes                                        sound
+// 0.0   2.0   seed       pull-back cream linen, chalk marks, gold rings sewn round        root + plucks
+// 2.0   2.0   shell      static    hex field in green backstitch, orbits and spokes sewn  rising arpeggio
+// 4.0   4.0   spaces     static    the seven patches laid on their seats                  one note per space
+// 8.0   ~11   liv        push-in   night dye soaks in; roots sewn, cords couched, rings   swell
+// ~19   3.4   signoff    pull-back lift off the embroidery; OneLyf + tagline sewn in below   two-note close
+
+usePalette(makePalette({
+  paper: '#f4efe1', paperBand: null, ink: '#1c2b21', night: '#171b16',
+  chalk: '#e8e4d6', chalkDim: '#767c6c', guide: 'rgba(31,90,60,.30)',
+  fills: ['#c08a14'], shade: '#5e6c60', light: '#fffdf7', blush: '#c08a14',
+  accents: ['#c08a14'], inks: ['#1c2b21'], finish: 'flat',
+}));
+
+// threads, each as dark (the shaded side) / mid (body) / hi (where the light catches it)
+const TH = col => ({ dark: shade(col, .5), mid: col, hi: tint(col, .5) });
+const GOLD = { dark: '#4a300a', mid: '#b07f2a', hi: '#f3d38a' };
+const TIE = { dark: '#140e04', mid: '#3d2b0f', hi: '#7a5d32' };
+const CHALK = { dark: '#2c3029', mid: '#6b7162', hi: '#b3b8a8' };
+const INK = { dark: '#070c08', mid: '#1c2b21', hi: '#56695b' };
+const GREEN = { dark: '#0e3b24', mid: '#2b7d55', hi: '#86c9a3' };
+const BRONZE = { dark: '#2a1605', mid: '#6e4217', hi: '#b98545' };
+const LIGHT = Math.atan2(-.8, -.6);          // the light comes from the top left
+
+// the seven branches (design-system accents) as woven patches, in launch order
+const SPACES = [
+  { key: 'finlyf', col: '#c08a14' }, { key: 'homlyf', col: '#bf6b49' }, { key: 'hlthlyf', col: '#6f9270' },
+  { key: 'gudlyf', col: '#5d648f' }, { key: 'wrklyf', col: '#b36c42' }, { key: 'skoollyf', col: '#6f8090' },
+  { key: 'waves', col: '#2f7fa8' },
+];
+const A = window.ONELYF_ASSETS;
+const img = src => { const i = new Image(); i.src = src; return i; };
+const svgText = uri => { const k = uri.indexOf(','); return uri.slice(0, k).includes(';base64') ? atob(uri.slice(k + 1)) : decodeURIComponent(uri.slice(k + 1)); };
+const threadOnly = uri => img('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText(uri).replace(/<circle[^>]*url\(#liv\)[^>]*\/>/, '')));
+SPACES.forEach(sp => { sp.img = img(A.emblems[sp.key]); sp.T = TH(sp.col); });
+const CREST_THREAD = threadOnly(A.crest), LIVE_THREAD = threadOnly(A.liveNight);
+
+const ORBIT = 330, LIV_H = 270;
+
+// ===================== THREAD =====================
+// A canvas for something drawn once (cloth, the sewn hex field). Not a core layer(): defineFilm()
+// resizes every layer when it sets the format, and resizing a canvas wipes what was drawn on it.
+function still() { const o = document.createElement('canvas'); o.width = Math.round(W * S); o.height = Math.round(H * S); return o; }
+// one stitch of thread from (x0, y0) to (x1, y1), w wide. sheen scales how much light it catches.
+function threadSeg(c, x0, y0, x1, y1, w, T, twist = true, sheen = 1) {
+  const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || .001, ux = dx / L, uy = dy / L;
+  let px = -uy, py = ux;
+  if (px * Math.cos(LIGHT) + py * Math.sin(LIGHT) < 0) { px = -px; py = -py; }   // p points at the light
+  c.lineCap = 'round';
+  c.strokeStyle = 'rgba(0,0,0,.42)'; c.lineWidth = w * 1.1;
+  c.beginPath(); c.moveTo(x0 + w * .35, y0 + w * .5); c.lineTo(x1 + w * .35, y1 + w * .5); c.stroke();
+  c.strokeStyle = T.dark; c.lineWidth = w;
+  c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+  c.strokeStyle = mix(T.dark, T.mid, clamp(.55 + .45 * sheen, 0, 1)); c.lineWidth = w * .64;
+  c.beginPath(); c.moveTo(x0 + px * w * .1, y0 + py * w * .1); c.lineTo(x1 + px * w * .1, y1 + py * w * .1); c.stroke();
+  c.strokeStyle = alpha(T.hi, .25 + .7 * sheen); c.lineWidth = w * .2;
+  c.beginPath(); c.moveTo(x0 + px * w * .24, y0 + py * w * .24); c.lineTo(x1 + px * w * .24, y1 + py * w * .24); c.stroke();
+  if (twist && w > 1.4) {                                                // the plies: an S twist
+    c.strokeStyle = alpha(T.dark, .55); c.lineWidth = Math.max(.45, w * .11);
+    c.beginPath();
+    for (let d = w * .4; d < L - w * .2; d += w * .85) {
+      const x = x0 + ux * d, y = y0 + uy * d;
+      c.moveTo(x - px * w * .48 - ux * w * .3, y - py * w * .48 - uy * w * .3); c.lineTo(x + px * w * .48 + ux * w * .3, y + py * w * .48 + uy * w * .3);
+    }
+    c.stroke();
+  }
+}
+// how much light a satin stitch lying at angle a catches: most when it lies across the light
+const sheenAt = a => .35 + .65 * Math.abs(Math.sin(a - LIGHT));
+
+// point and direction at distance d along a polyline with cumulative lengths
+function along(pts, cum, d) {
+  let i = 1; while (i < pts.length - 1 && cum[i] < d) i++;
+  const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], seg = cum[i] - cum[i - 1] || 1, t = clamp((d - cum[i - 1]) / seg, 0, 1);
+  return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, (x1 - x0) / seg, (y1 - y0) / seg];
+}
+// stem stitch: short overlapping stitches along the line, each leaning off it. Whole stitches only.
+function stemStitch(c, pts, cum, vis, widthAt, st, seed) {
+  const r = rng(seed), n = Math.floor(vis / st);
+  for (let k = 0; k < n; k++) {
+    const a = k * st, b = Math.min(vis, a + st * 1.4), w = widthAt(a);
+    const [x0, y0, dx, dy] = along(pts, cum, a), [x1, y1] = along(pts, cum, b);
+    const lean = (k % 2 ? 1 : -1) * w * .25 + (r() - .5) * w * .15;
+    threadSeg(c, x0 + dy * lean, y0 - dx * lean, x1 - dy * lean, y1 + dx * lean, w, GOLD, true, sheenAt(Math.atan2(dy, dx)) * (.85 + r() * .3));
+  }
+  return n * st;
+}
+// a loose working thread: comes up through the cloth at (x, y) heading (dx, dy), lifts off it and
+// hangs in a lazy curve. The higher it is off the cloth, the further its shadow falls from it.
+function looseThread(c, x, y, dx, dy, len, w, sway, T, al = 1) {
+  if (len < 2 || al <= .01) return;
+  const a0 = Math.atan2(dy, dx), pts = [];
+  for (let j = 0; j <= 16; j++) {
+    const t = j / 16, a = a0 + sway * t * 2.2 + Math.sin(t * 3 + sway) * .35;
+    const prev = pts[j - 1] || [x, y]; const seg = len / 16;
+    pts.push(j ? [prev[0] + Math.cos(a) * seg, prev[1] + Math.sin(a) * seg] : [x, y]);
+  }
+  c.save(); c.globalAlpha = al; c.lineCap = 'round';
+  // its shadow on the cloth: soft, and further from the thread the higher the thread is
+  c.filter = `blur(${1.2 * S}px)`; c.strokeStyle = 'rgba(0,0,0,.5)'; c.lineWidth = w;
+  c.beginPath(); pts.forEach(([px, py], j) => { const h = Math.pow(j / 16, 1.1) * len * .45; j ? c.lineTo(px + h * .55, py + h * .8) : c.moveTo(px, py); }); c.stroke();
+  c.filter = 'none';
+  for (let j = 1; j < pts.length; j++) { c.globalAlpha = al * (1 - .5 * j / 16); threadSeg(c, pts[j - 1][0], pts[j - 1][1], pts[j][0], pts[j][1], w, T, true, 1); }
+  c.restore();
+}
+// couched cord: two plies twisted into a cord, laid on the cloth and tied down with dark stitches
+function cord(c, pts, cum, vis, widthAt, seed) {
+  if (vis <= 0) return;
+  const r = rng(seed);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  for (let pass = 0; pass < 2; pass++) {                                // shadow, then the cord body
+    for (let i = 1; i < pts.length && cum[i - 1] < vis; i++) {
+      const e = along(pts, cum, Math.min(cum[i], vis)), w = widthAt(cum[i - 1]);
+      c.strokeStyle = pass ? GOLD.dark : 'rgba(0,0,0,.45)'; c.lineWidth = pass ? w : w * 1.15;
+      const o = pass ? [0, 0] : [w * .4, w * .6];
+      c.beginPath(); c.moveTo(pts[i - 1][0] + o[0], pts[i - 1][1] + o[1]); c.lineTo(e[0] + o[0], e[1] + o[1]); c.stroke();
+    }
+  }
+  // the plies: each twist is a short lit lozenge across the cord
+  for (let d = 0; d < vis; d += 1) {
+    const w = widthAt(d), step = Math.max(2.2, w * .75);
+    if ((d % step) >= 1) continue;
+    const [x, y, dx, dy] = along(pts, cum, d), hw = w / 2;
+    let px = -dy, py = dx; if (px * Math.cos(LIGHT) + py * Math.sin(LIGHT) < 0) { px = -px; py = -py; }
+    const sh = sheenAt(Math.atan2(dy, dx));
+    c.strokeStyle = mix(GOLD.dark, GOLD.mid, .5 + .5 * sh); c.lineWidth = step * .62;
+    c.beginPath(); c.moveTo(x - px * hw * .8 - dx * hw * .45, y - py * hw * .8 - dy * hw * .45); c.lineTo(x + px * hw * .8 + dx * hw * .45, y + py * hw * .8 + dy * hw * .45); c.stroke();
+    c.strokeStyle = alpha(GOLD.hi, .35 + .6 * sh); c.lineWidth = Math.max(.5, step * .2);
+    c.beginPath(); c.moveTo(x + px * hw * .15 + dx * hw * .05, y + py * hw * .15 + dy * hw * .05); c.lineTo(x + px * hw * .7 + dx * hw * .4, y + py * hw * .7 + dy * hw * .4); c.stroke();
+  }
+  // couching ties
+  for (let d = 6 + r() * 6; d < vis; d += 14 + r() * 6) {
+    const [x, y, dx, dy] = along(pts, cum, d), hw = widthAt(d) / 2 + 1.8;
+    threadSeg(c, x + dy * hw, y - dx * hw, x - dy * hw, y + dx * hw, 1.3, TIE, false, .6);
+  }
+}
+// running stitch around a circle. sweep 0..1 sews it round from angle `from`, one whole stitch at a time.
+function runningRing(c, x, y, rad, T, al, seed, st = 9, gap = 7, w = 2.2, sweep = 1, from = null) {
+  if (al <= .01 || rad < 2 || sweep <= 0) return;
+  const n = Math.max(6, Math.round(TAU * rad / (st + gap))), off = from ?? rng(seed)() * TAU;
+  c.save(); c.globalAlpha = al;
+  for (let k = 0; k < Math.floor(n * sweep + 1e-6); k++) {
+    const a0 = off + k / n * TAU, a1 = a0 + st / rad;
+    threadSeg(c, x + Math.cos(a0) * rad, y + Math.sin(a0) * rad, x + Math.cos(a1) * rad, y + Math.sin(a1) * rad, w, T, w > 1.9, sheenAt((a0 + a1) / 2 + Math.PI / 2));
+  }
+  c.restore();
+}
+// a French knot: a small wrapped knot of thread, a lit dome with its wraps showing
+function knot(c, px, py, s, T, rot = 0) {
+  c.fillStyle = 'rgba(0,0,0,.45)'; c.beginPath(); c.arc(px + s * .45, py + s * .6, s * 1.05, 0, TAU); c.fill();
+  const gr = c.createRadialGradient(px - s * .35, py - s * .4, s * .1, px, py, s);
+  gr.addColorStop(0, T.hi); gr.addColorStop(.55, T.mid); gr.addColorStop(1, T.dark);
+  c.fillStyle = gr; c.beginPath(); c.arc(px, py, s, 0, TAU); c.fill();
+  c.strokeStyle = alpha(T.dark, .6); c.lineWidth = Math.max(.5, s * .12);
+  c.beginPath(); c.arc(px, py, s * .55, rot, rot + 2.2); c.moveTo(px + Math.cos(rot + 3) * s * .8, py + Math.sin(rot + 3) * s * .8); c.arc(px, py, s * .8, rot + 3, rot + 4.8); c.stroke();
+}
+// the burst of dots, as French knots of gold
+function frenchKnots(c, x, y, R, rays, seed, g) {
+  const r = rng(seed);
+  for (let k = 0; k < rays; k++) {
+    const a = k / rays * TAU + (r() - .5) * .2, n = 6 + (r() * 6 | 0);
+    for (let j = 1; j <= n; j++) {
+      const d = R * g * j / n * (.9 + r() * .2), s = 1.8 + r() * 1.4, rot = r() * TAU;
+      c.globalAlpha = .95 - j / n * .45; knot(c, x + Math.cos(a) * d, y + Math.sin(a) * d, s, GOLD, rot);
+    }
+  }
+  c.globalAlpha = 1;
+}
+// backstitch along a straight line: even stitches end to end, sewn out to `vis`
+function backstitch(c, x0, y0, x1, y1, vis, T, w, st = 14) {
+  const L = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / L, uy = (y1 - y0) / L, sh = sheenAt(Math.atan2(uy, ux));
+  for (let k = 0; (k + 1) * st <= vis + .01; k++)
+    threadSeg(c, x0 + ux * (k * st + 1), y0 + uy * (k * st + 1), x0 + ux * ((k + 1) * st - 1), y0 + uy * ((k + 1) * st - 1), w, T, w > 1.9, sh);
+}
+
+// ===================== CLOTH =====================
+// linen, thread by thread: a plain-weave tile where every float is a small shaded cylinder, then
+// tiled with low-frequency mottling and slubs over it so the repeat doesn't show.
+function makeLinen(base, seed, o, pad = 0) {
+  const r = rng(seed), p = 4.5, n = 40, T = p * n, q = 2;           // 40 threads to the tile
+  const tile = document.createElement('canvas'); tile.width = tile.height = T * q;
+  const t = tile.getContext('2d'); t.scale(q, q); t.fillStyle = shade(base, o.gap); t.fillRect(0, 0, T, T);
+  const warp = Array.from({ length: n }, () => mix(base, r() < .5 ? o.toneA : o.toneB, r() * o.spread));
+  const weft = Array.from({ length: n }, () => mix(base, r() < .5 ? o.toneA : o.toneB, r() * o.spread));
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const over = (i + j) % 2 === 0, x = i * p, y = j * p;              // warp over weft on the even cells
+    const col = over ? warp[i] : weft[j];
+    const gr = over ? t.createLinearGradient(x, 0, x + p, 0) : t.createLinearGradient(0, y, 0, y + p);
+    gr.addColorStop(0, tint(col, .12)); gr.addColorStop(.35, col); gr.addColorStop(1, shade(col, .45));
+    t.fillStyle = gr;
+    t.beginPath(); t.roundRect(x + (over ? p * .1 : 0), y + (over ? 0 : p * .1), over ? p * .8 : p, over ? p : p * .8, p * .35); t.fill();
+  }
+  const LW = W + 2 * pad, LH = H + 2 * pad, area = LW * LH / (W * H);  // pad: cloth beyond the frame, for a pulled-back camera
+  const L = document.createElement('canvas'); L.width = Math.round(LW * S); L.height = Math.round(LH * S); L.pad = pad;
+  const g = L.getContext('2d'); g.setTransform(S, 0, 0, S, 0, 0);
+  const pat = g.createPattern(tile, 'repeat'); pat.setTransform(new DOMMatrix().scale(1 / q));
+  g.fillStyle = pat; g.fillRect(0, 0, LW, LH);
+  for (let k = 0; k < 26 * area; k++) {                                 // mottling
+    const x = r() * LW, y = r() * LH, rad = 120 + r() * 260, gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, alpha(r() < .5 ? o.toneA : o.toneB, (.05 + r() * .06) * o.mott)); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  for (let k = 0; k < 40 * area; k++) {                                 // slubs: a thicker stretch of weft
+    const y = Math.round(r() * LH / p) * p + p * .5, x0 = r() * LW, len = 40 + r() * 160;
+    g.strokeStyle = alpha(o.slub, .10 + r() * .08); g.lineWidth = p * .9; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x0, y); g.lineTo(x0 + len, y); g.stroke();
+  }
+  g.strokeStyle = alpha(o.slub, .12); g.lineWidth = .5;              // loose fibres
+  for (let k = 0; k < 900 * area; k++) { const x = r() * LW, y = r() * LH, a = r() * TAU, l = 3 + r() * 7; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a + 1) * l * .6, y + Math.sin(a + 1) * l * .6, x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+  return L;
+}
+
+// ===================== GLYPH IN SATIN =====================
+// Satin stitches laid across the strands: from every edge point, a stitch runs along the inward
+// normal of the outline until it leaves the shape. Built once at 4x, clipped to the glyph.
+function makeSatin(im, w, h, q, T) {
+  const m = document.createElement('canvas'); m.width = w; m.height = h;
+  const mg = m.getContext('2d'); mg.drawImage(im, 0, 0, w, h);
+  const px = mg.getImageData(0, 0, w, h).data, M = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) M[i] = px[i * 4 + 3] / 255;
+  const B = new Float32Array(M), tmp = new Float32Array(w * h), rad = 3;   // box blur, twice, for smooth normals
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < h; y++) { let s = 0; for (let x = -rad; x < w; x++) { if (x + rad < w) s += B[y * w + x + rad]; if (x - rad - 1 >= 0) s -= B[y * w + x - rad - 1]; if (x >= 0) tmp[y * w + x] = s / (2 * rad + 1); } }
+    for (let x = 0; x < w; x++) { let s = 0; for (let y = -rad; y < h; y++) { if (y + rad < h) s += tmp[(y + rad) * w + x]; if (y - rad - 1 >= 0) s -= tmp[(y - rad - 1) * w + x]; if (y >= 0) B[y * w + x] = s / (2 * rad + 1); } }
+  }
+  const inside = (x, y) => x >= 0 && y >= 0 && x < w && y < h && M[(y | 0) * w + (x | 0)] > .5;
+  const hash = new Map(), cell = 2, gap = 1.25, stitches = [];
+  const near = (x, y) => { const cx = Math.floor(x / cell), cy = Math.floor(y / cell); for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) for (const [qx, qy] of hash.get((cx + i) + ',' + (cy + j)) || []) if (Math.hypot(qx - x, qy - y) < gap) return true; return false; };
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    if (!inside(x, y) || (inside(x + 1, y) && inside(x - 1, y) && inside(x, y + 1) && inside(x, y - 1))) continue;
+    const gx = B[y * w + x + 1] - B[y * w + x - 1], gy = B[(y + 1) * w + x] - B[(y - 1) * w + x], gn = Math.hypot(gx, gy);
+    if (gn < 1e-4 || near(x, y)) continue;
+    const nx = gx / gn, ny = gy / gn; let t = 0;
+    while (t < 40 && inside(x + .5 + nx * (t + .5), y + .5 + ny * (t + .5))) t += .5;
+    if (t < 2) continue;
+    const k = Math.floor(x / cell) + ',' + Math.floor(y / cell); if (!hash.has(k)) hash.set(k, []); hash.get(k).push([x, y]);
+    stitches.push([x + .5, y + .5, x + .5 + nx * t, y + .5 + ny * t]);
+  }
+  const L = document.createElement('canvas'); L.width = w * q; L.height = h * q;
+  const g = L.getContext('2d'); g.scale(q, q);
+  const r = rng(77);
+  g.lineCap = 'butt';
+  for (const [x0, y0, x1, y1] of stitches) {
+    const sh = sheenAt(Math.atan2(y1 - y0, x1 - x0)) * (.92 + r() * .16);
+    g.strokeStyle = mix(T.dark, T.mid, clamp(.35 + .65 * sh, 0, 1)); g.lineWidth = 1.7;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.strokeStyle = alpha(T.hi, .15 + .65 * sh * sh); g.lineWidth = .7;
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, ux = (x1 - x0) * .32, uy = (y1 - y0) * .32;
+    g.beginPath(); g.moveTo(mx - ux, my - uy); g.lineTo(mx + ux, my + uy); g.stroke();
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'destination-in';
+  const grown = document.createElement('canvas'); grown.width = w * q; grown.height = h * q;   // the mask, a hair fatter so edges keep their stitch ends
+  const gg = grown.getContext('2d'); gg.filter = `blur(${q * .6}px)`; gg.drawImage(im, 0, 0, w * q, h * q); gg.filter = 'none'; gg.drawImage(im, 0, 0, w * q, h * q);
+  g.drawImage(grown, 0, 0);
+  // outline: the satin sits inside a darker split-stitch edge (the silhouette, dilated by ~1.3 units)
+  const O = document.createElement('canvas'); O.width = w * q; O.height = h * q; const og = O.getContext('2d');
+  for (let a = 0; a < TAU; a += TAU / 12) og.drawImage(im, Math.cos(a) * 1.3 * q, Math.sin(a) * 1.3 * q, w * q, h * q);
+  og.globalCompositeOperation = 'source-in'; og.fillStyle = T.dark; og.fillRect(0, 0, w * q, h * q);
+  og.globalCompositeOperation = 'source-over'; og.drawImage(L, 0, 0);
+  return O;
+}
+
+// ===================== ROOTS (v3.4 geometry) =====================
+// Same seeded generator as v3.4: a rounded dome under the glyph, stubs' tips, irregular strands.
+const ROOT_TIPS = [
+  [88, 474, 165], [124, 497, 125], [157, 542, 118], [109, 565, 130], [75, 568, 150], [119, 576, 112],
+  [153, 590, 105], [183, 600, 95], [210, 585, 82], [250, 619, 96], [274, 675, 90], [300, 619, 84],
+  [340, 584, 98], [366, 600, 85], [397, 591, 75], [394, 542, 62], [431, 576, 68], [472, 568, 30],
+  [416, 507, 55], [461, 471, 15],
+];
+const ROOT_DOME = { x: 274, y: 470, rx: 400, ry: 390 };
+const domeR = (x, y) => Math.hypot((x - ROOT_DOME.x) / ROOT_DOME.rx, (y - ROOT_DOME.y) / ROOT_DOME.ry);
+const angTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+const RSTRANDS = (() => {
+  const r = rng(404), out = [];
+  const reachAt = (s, u) => u <= 0 ? 0 : Math.min(s.len, s.v * u + s.A * (Math.sin(s.w * u + s.ph) - Math.sin(s.ph)));
+  const toEdge = (x, y, a) => { let d = 0; while (domeR(x + Math.cos(a) * d, y + Math.sin(a) * d) < 1 && d < 900) d += 4; return d; };
+  function strand(x, y, a, len, w0, depth, t0, v) {
+    const pts = [[x, y]], cum = [0], edge = .93 + r() * .1;
+    let ang = a, curv = (r() - .5) * .05, L = 0;
+    while (L < len) {
+      curv = clamp((curv + (r() - .5) * .04) * .93, -.07, .07);
+      ang += curv + (r() - .5) * .1;
+      if (r() < .012) ang += (r() - .5) * .6;
+      ang += angTo(ang, Math.atan2(y - 443, x - 274)) * [.035, .02, .01, .005][depth];
+      if (y < 470) ang += angTo(ang, Math.PI / 2) * .3;
+      const st = 7 * (.7 + r() * .6);
+      x += Math.cos(ang) * st; y += Math.sin(ang) * st; L += st;
+      pts.push([x, y]); cum.push(L);
+      if (domeR(x, y) > edge) break;
+    }
+    const w = TAU * (.7 + r() * .9);
+    const s = { pts, cum, len: L, w0, t0, v, w, A: .6 * v / w, ph: r() * TAU, seed: out.length + 900, depth };
+    out.push(s);
+    if (depth >= 3 || pts.length < 6) return;
+    const nb = Math.floor(r() * [3, 2.4, 1.6][depth]) + (depth === 0 ? 1 : 0);
+    for (let k = 0; k < nb; k++) {
+      const i = 2 + Math.floor(r() * (pts.length * .8 - 2)), f = cum[i] / L;
+      let u = 0; while (reachAt(s, u) < cum[i]) u += .02;
+      const side = r() < .5 ? -1 : 1, da = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+      strand(pts[i][0], pts[i][1], da + side * (.35 + r() * .8), (L - cum[i]) * (.3 + r() * .6) + r() * 30,
+        w0 * (1 - .55 * f) * (.55 + r() * .25), depth + 1, t0 + u + r() * .2, v * (.8 + r() * .3));
+    }
+  }
+  for (const [x, y, deg] of ROOT_TIPS) {
+    const a = deg * Math.PI / 180 + (r() - .5) * .3, len = toEdge(x, y, a) * (.9 + r() * .15);
+    strand(x, y, a, len, 9 + r() * 5, 0, .7 + r() * .35, len / (2.4 + r() * .5));
+  }
+  out.forEach(s => { s.reachAt = u => reachAt(s, u); let u = 0; while (reachAt(s, u) < s.len - .01) u += .02; s.tEnd = s.t0 + u; s.sway = r() * TAU; });
+  return out;
+})();
+
+// ===================== HYPHAE (design-system asset, read as cords) =====================
+// hyphaeNight is 58 strands, each a <g> of short segments with their own stroke widths.
+const HYPHAE = (() => {
+  const doc = new DOMParser().parseFromString(svgText(A.hyphaeNight), 'image/svg+xml');
+  return [...doc.querySelectorAll('g')].map(g => {
+    const pts = [], ws = [];
+    g.querySelectorAll('path').forEach((p, k) => {
+      const n = p.getAttribute('d').match(/-?[\d.]+/g).map(Number);
+      if (!k) pts.push([n[0], n[1]]);
+      pts.push([n[2], n[3]]); ws.push(+p.getAttribute('stroke-width'));
+    });
+    const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const op = +g.getAttribute('stroke-opacity');
+    return { pts, cum, len: cum[cum.length - 1], ws, op };
+  }).filter(h => h.pts.length > 1);
+})();
+// v4.4: the cords are couched along their length at the roots' pace (CORD_V, film px/s; the main roots
+// run 33-63), with the same surge-and-pause. The seven main cords leave the glyph at CORDS_AT, as the
+// roots finish. A cord that branches off another starts when the gold reaches its branch point; the
+// arcs between branches start from the patch when that branch's main cord arrives, and the faint
+// long arcs grow in from both ends. The scene lasts until the last cord is down, plus a short hold.
+const CORD_V = 48, CORDS_AT = 3.0;
+const CORD_HOLD = (() => {
+  const r = rng(505), near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 6;
+  const prim = HYPHAE.filter(h => h.op >= .8);
+  prim.forEach(h => { h.t0 = CORDS_AT; h.arrive = CORDS_AT + h.len / CORD_V; const e = h.pts[h.pts.length - 1]; h.ang = Math.atan2(e[1] - CY, e[0] - CX); });
+  const attach = () => { let changed = true; while (changed) { changed = false;
+    for (const h of HYPHAE) { if (h.t0 !== undefined) continue; let best = null;
+      for (const q of HYPHAE) { if (q === h || q.t0 === undefined) continue; q.pts.forEach((pt, k) => { if (near(pt, h.pts[0])) { const t = q.t0 + q.cum[k] / CORD_V; if (best === null || t < best) best = t; } }); }
+      if (best !== null) { h.t0 = best; changed = true; } } } };
+  attach();
+  for (const h of HYPHAE) {                                               // arcs that start from a patch
+    if (h.t0 !== undefined || HYPHAE.some(q => q !== h && q.pts.some(pt => near(pt, h.pts[0])))) continue;
+    const a = Math.atan2(h.pts[0][1] - CY, h.pts[0][0] - CX);
+    h.t0 = prim.reduce((b, q) => Math.abs(angTo(q.ang, a)) < Math.abs(angTo(b.ang, a)) ? q : b).arrive;
+    h.both = h.op < .5;
+  }
+  attach();
+  let done = 0;
+  for (const h of HYPHAE) {
+    if (h.t0 === undefined) h.t0 = CORDS_AT;
+    h.w = TAU * (.6 + r() * .8); h.A = .6 * CORD_V / h.w; h.ph = r() * TAU;
+    h.goal = h.both ? h.len / 2 : h.len;
+    h.reachAt = t => { const u = t - h.t0; return u <= 0 ? 0 : Math.min(h.goal, CORD_V * u + h.A * (Math.sin(h.w * u + h.ph) - Math.sin(h.ph))); };
+    let u = 0; while (h.reachAt(h.t0 + u) < h.goal - .01) u += .02; done = Math.max(done, h.t0 + u);
+    if (h.op >= .8) h.arrive = h.t0 + u;                                  // when it really reaches the patch, surges and all
+    h.rpts = [...h.pts].reverse(); h.rws = [...h.ws].reverse(); h.rcum = h.rpts.map((_, i) => h.len - h.cum[h.pts.length - 1 - i]);
+  }
+  return done;
+})();
+const RING_T = 1.0;                                                        // a branch's ring takes 1 s to sew round
+const LIV_DUR = Math.max(CORD_HOLD, Math.max(...HYPHAE.filter(h => h.op >= .8).map(h => h.arrive)) + RING_T) + .6;
+
+// ===================== PIECES =====================
+let LINEN_DAY, LINEN_NIGHT, HEX_SEWN, CREST_SATIN, LIVE_SATIN;
+const DAY_LINEN = { gap: .18, toneA: '#b9ae94', toneB: '#ffffff', spread: .35, slub: '#fffdf7', mott: .45 };
+const NIGHT_LINEN = { gap: .35, toneA: '#000000', toneB: '#6b7162', spread: .22, slub: '#8a9080', mott: 1 };
+
+// the hex field, sewn once in green backstitch (two stitches to a side, shared sides sewn once)
+function makeHexSewn() {
+  const L = still(), g = L.getContext('2d'); g.setTransform(S, 0, 0, S, 0, 0);
+  const seen = new Set(), s = 44;
+  g.globalAlpha = .8;
+  hexCells([CX - 560, CY - 560, 1120, 1120], s, (x, y) => {
+    if (Math.hypot(x - CX, y - CY) > 560) return;
+    for (let i = 0; i < 6; i++) {
+      const a0 = Math.PI / 3 * i + Math.PI / 6, a1 = a0 + Math.PI / 3;
+      const x0 = x + s * Math.cos(a0), y0 = y + s * Math.sin(a0), x1 = x + s * Math.cos(a1), y1 = y + s * Math.sin(a1);
+      const key = Math.round((x0 + x1) * 2) + ',' + Math.round((y0 + y1) * 2); if (seen.has(key)) continue; seen.add(key);
+      backstitch(g, x0, y0, x1, y1, s, GREEN, 1.7, s / 2);
+    }
+  });
+  return L;
+}
+// a woven patch, sewn on: soft shadow, lit from the top left. t < 1 is the patch being laid down.
+function drawPatch(c, x, y, r, sp, t = 1) {
+  if (r < 1 || t <= 0) return;
+  const k = lerp(1.3, 1, easeOut(t)), R = r * k, S2 = R / .46, lift = lerp(16, 4.5, easeOut(t));
+  c.save(); c.globalAlpha = clamp(t * 2.5, 0, 1);
+  c.shadowColor = `rgba(0,0,0,${lerp(.25, .5, t)})`; c.shadowBlur = lerp(26, 10, t) * S * r / 82; c.shadowOffsetX = lift * .66 * S * r / 82; c.shadowOffsetY = lift * S * r / 82;
+  c.drawImage(sp.img, x - S2 / 2, y - S2 / 2, S2, S2);
+  c.shadowColor = 'transparent'; c.beginPath(); c.arc(x, y, R * .92, 0, TAU); c.clip();
+  const lg = c.createLinearGradient(x - R * .85, y - R * .85, x + R * .85, y + R * .85);
+  lg.addColorStop(0, 'rgba(255,248,230,.16)'); lg.addColorStop(.5, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,.2)');
+  c.fillStyle = lg; c.fillRect(x - R, y - R, 2 * R, 2 * R); c.restore();
+}
+// a glyph in satin, centred on its core like v3.4's anchor(), h tall
+function glyph(c, SAT, x, y, h) {
+  const w = h * 549 / 748;
+  c.save(); c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = 4 * S * h / 270; c.shadowOffsetX = 1.6 * S * h / 270; c.shadowOffsetY = 2.4 * S * h / 270;
+  c.drawImage(SAT, x - w * 274 / 549, y - h * 443 / 748, w, h); c.restore();
+}
+function vignette(c, a) { resetT(c); const vg = c.createRadialGradient(CX, CY, 360, CX, CY, 800); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, `rgba(0,0,0,${a})`); c.fillStyle = vg; c.fillRect(0, 0, W, H); }
+function dayCloth(c, zoom) { resetT(c); c.fillStyle = PAL.paper; c.fillRect(0, 0, W, H); cam(c, CX, CY, zoom); c.drawImage(LINEN_DAY, -60, -60, W + 120, H + 120); }
+// the seat of a branch: a cross stitch and a running-stitch ring in its colour, both sewn in by t
+function seat(c, x, y, sp, k, t) {
+  const a = Math.min(1, t * 2), s = 26 * a;
+  if (s > 1) { backstitch(c, x - 26, y, x + 26, y, 52 * a, sp.T, 3, 13); backstitch(c, x, y - 26, x, y + 26, 52 * a, sp.T, 3, 13); }
+  runningRing(c, x, y, 52, sp.T, .95, 70 + k, 9, 8, 2.6, t, -Math.PI / 2);
+}
+const seatXY = k => { const a = -Math.PI / 2 + k / SPACES.length * TAU; return [CX + Math.cos(a) * ORBIT, CY + Math.sin(a) * ORBIT]; };
+
+// satin-stitched lettering: the words filled with fine diagonal satin, edged in a darker split stitch
+let TXT = null, TXT2 = null, STRIPES_GOLD = null, STRIPES_CREAM = null;
+const CREAM = { dark: '#8f8a78', mid: '#e8e4d6', hi: '#ffffff' };
+function makeStripes(T) {
+  const L = still(), g = L.getContext('2d'); g.setTransform(S, 0, 0, S, 0, 0);
+  g.translate(CX, CY); g.rotate(-.7); g.translate(-CX, -CY);
+  const gap = 2.2, R = 800;
+  for (let v = -R; v < R; v += gap) {
+    g.fillStyle = T.mid; g.fillRect(CX - R, CY + v, 2 * R, gap);
+    g.fillStyle = alpha(T.hi, .75); g.fillRect(CX - R, CY + v, 2 * R, gap * .3);
+    g.fillStyle = alpha(T.dark, .7); g.fillRect(CX - R, CY + v + gap * .8, 2 * R, gap * .2);
+  }
+  return L;
+}
+// reveal 0..1 sews the line in from the left, behind a soft leading edge
+function stitchedText(c, text, x, y, size, T, stripes, reveal = 1) {
+  if (!text || reveal <= 0) return;
+  const a = TXT.getContext('2d'), b = TXT2.getContext('2d'), font = `${size}px ${HAND_FONT}`;
+  const fresh = g => { g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, g.canvas.width, g.canvas.height); g.setTransform(S, 0, 0, S, 0, 0); g.font = font; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; };
+  fresh(a); a.fillStyle = '#000'; a.fillText(text, x, y);
+  a.globalCompositeOperation = 'source-in'; a.drawImage(stripes, 0, 0, W, H);
+  fresh(b); b.strokeStyle = T.dark; b.lineWidth = Math.max(1.4, size * .035); b.lineJoin = 'round'; b.strokeText(text, x, y);
+  b.drawImage(TXT, 0, 0, W, H);
+  if (reveal < 1) {
+    const half = b.measureText(text).width / 2 + 20, fx = lerp(x - half, x + half + 60, reveal), gr = b.createLinearGradient(fx - 60, 0, fx, 0);
+    gr.addColorStop(0, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    b.globalCompositeOperation = 'destination-in'; b.fillStyle = gr; b.fillRect(0, 0, W, H);
+  }
+  c.save(); resetT(c); c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = 4 * S; c.shadowOffsetX = 1.5 * S; c.shadowOffsetY = 2.2 * S;
+  c.drawImage(TXT2, 0, 0, W, H); c.restore();
+}
+
+// ===================== SCENES =====================
+// 1. SEED — Liv's crest on bare cream linen; chalk marks, then gold rings sewn round it one by one.
+function sceneSeed(c, tau) {
+  dayCloth(c, lerp(1.30, 1.0, sm(0, 2.0, tau, easeOut)));
+  construction(c, CX, CY, 130, 3, PAL.guide, .55 * sm(.25, 1.0, tau));
+  for (let k = 0; k < 4; k++) runningRing(c, CX, CY, 150 + k * 65, GOLD, .9, 20 + k, 9, 7, 2.8, sm(.2 + k * .3, .9 + k * .3, tau), -Math.PI / 2 + k * .8);
+  glyph(c, CREST_SATIN, CX, CY, LIV_H);
+  vignette(c, .22);
+}
+
+// 2. SHELL — the hex field spreads out in green backstitch, the orbits are sewn round, and seven
+// spokes are sewn out from the crest to the seats, each marked with a cross stitch and a ring.
+function sceneShell(c, tau) {
+  dayCloth(c, 1.0);
+  const g = sm(0, 1.2, tau, easeOut), R = 50 + g * 470;
+  c.save(); c.beginPath(); c.arc(CX, CY, R, 0, TAU); c.clip(); c.drawImage(HEX_SEWN, 0, 0, W, H); c.restore();
+  runningRing(c, CX, CY, R, GREEN, .9, 12, 10, 7, 2.4);
+  const o = sm(.45, 1.5, tau, easeOut);
+  runningRing(c, CX, CY, ORBIT, INK, .85, 13, 12, 9, 2.2, o, -Math.PI / 2);
+  runningRing(c, CX, CY, ORBIT * .58, INK, .6, 14, 8, 10, 1.8, o, Math.PI / 2);
+  SPACES.forEach((sp, k) => {
+    const t = sm(0.55 + k * 0.06, 1.25 + k * 0.06, tau, easeOut); if (t < .02) return;
+    const [x, y] = seatXY(k);
+    backstitch(c, CX, CY, x, y, ORBIT * t, INK, 2.2, 14);
+    if (t > .6) seat(c, x, y, sp, k, (t - .6) / .4);
+  });
+  glyph(c, CREST_SATIN, CX, CY, LIV_H);
+  vignette(c, .22);
+}
+
+// 3. SPACES — the mycelium's pattern is chalked on the cloth, and the seven patches are laid on
+// their seats one after another; each settles, its shadow drawing in under it.
+function sceneSpaces(c, tau) {
+  dayCloth(c, 1.0);
+  c.save(); c.beginPath(); c.arc(CX, CY, 520, 0, TAU); c.clip(); c.drawImage(HEX_SEWN, 0, 0, W, H); c.restore();
+  runningRing(c, CX, CY, 520, GREEN, .9, 12, 10, 7, 2.4);
+  runningRing(c, CX, CY, ORBIT, INK, .85, 13, 12, 9, 2.2, 1, -Math.PI / 2);
+  runningRing(c, CX, CY, ORBIT * .58, INK, .6, 14, 8, 10, 1.8, 1, Math.PI / 2);
+  c.save(); c.setLineDash([2.5, 4]); c.lineCap = 'round';                // transfer lines for the hyphae
+  for (const h of HYPHAE) { c.strokeStyle = alpha('#3f6b8f', (.12 + .22 * h.op) * sm(0, .6, tau)); c.lineWidth = 1.1; c.beginPath(); h.pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); }
+  c.restore();
+  SPACES.forEach((sp, k) => { const [x, y] = seatXY(k); backstitch(c, CX, CY, x, y, ORBIT, INK, 2.2, 14); });
+  SPACES.forEach((sp, k) => {
+    const [x, y] = seatXY(k), t = sm(0.05 + k * 0.22, 0.65 + k * 0.22, tau, easeOut);
+    if (t < 1) seat(c, x, y, sp, k, 1);
+    drawPatch(c, x, y, 82, sp, t);
+  });
+  glyph(c, CREST_SATIN, CX, CY, LIV_H);
+  vignette(c, .22);
+}
+
+// 4. LIV — night dye soaks through the linen from the core; the roots are sewn out of the glyph,
+// then gold cord is couched out along the hyphae to every branch, and each branch is ringed in cord.
+const LN = layer();
+// view: optional { zoom, y } for the sign-off's pull-back; otherwise the scene's own slow push-in
+function drawLiv(c, tau, view) {
+  resetT(c); c.fillStyle = PAL.night; c.fillRect(0, 0, W, H);
+  cam(c, CX, view ? view.y : CY, view ? view.zoom : lerp(1.0, 1.16, sm(0, LIV_DUR, tau)));
+  const pd = LINEN_NIGHT.pad; c.drawImage(LINEN_NIGHT, -pd, -pd, W + 2 * pd, H + 2 * pd);
+
+  runningRing(c, CX, CY, 520, CHALK, .9, 12, 10, 8, 1.8);
+  runningRing(c, CX, CY, ORBIT, CHALK, .9, 13, 12, 9, 1.8);
+
+  // transfer lines: the pattern drawn on the cloth before it's sewn
+  c.save(); c.setLineDash([2.5, 4]); c.lineCap = 'round';
+  for (const h of HYPHAE) { c.strokeStyle = alpha('#c9ccbd', .08 + .14 * h.op); c.lineWidth = 1; c.beginPath(); h.pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); }
+  c.restore();
+
+  // g: how far the main cords are out, 0 at the glyph to 1 at the branches (the rings and knots follow it)
+  const prim = HYPHAE.filter(h => h.op >= .8), g = sm(CORDS_AT, Math.max(...prim.map(h => h.arrive)), tau, easeOut);
+  if (g > .02) {
+    runningRing(c, CX, CY, 90 * g, GOLD, .75 * g, 46, 8, 6, 2.4);
+    runningRing(c, CX, CY, 170 * g, GOLD, .65 * g, 47, 8, 6, 2.2);
+    runningRing(c, CX, CY, 255 * g, GOLD, .55 * g, 48, 8, 6, 2);
+  }
+  {
+    HYPHAE.forEach((h, k) => {
+      const reach = h.reachAt(tau), width = (ws, cum, pts) => d => { let i = 1; while (i < pts.length - 1 && cum[i] < d) i++; return 1.4 + ws[i - 1] * 1.05; };
+      const wAt = width(h.ws, h.cum, h.pts);
+      cord(c, h.pts, h.cum, reach, wAt, 300 + k);
+      if (h.both) cord(c, h.rpts, h.rcum, reach, width(h.rws, h.rcum, h.rpts), 400 + k);
+      // the main cords' loose ends, ahead of the couching: they draw out of the core and are used up at the branch
+      const tail = h.op >= .8 ? 38 * clamp(reach / 60, 0, 1) * clamp((h.len - reach) / 40, 0, 1) : 0;
+      if (tail > 1) { const [x, y, dx, dy] = along(h.pts, h.cum, reach); looseThread(c, x, y, dx, dy, tail, wAt(reach) * .9, Math.sin(tau * 1.7 + k) * .5, GOLD, clamp(tail / 12, 0, 1)); }
+    });
+    if (g > .02) frenchKnots(c, CX, CY, 340, 22, 44, g);
+  }
+
+  // the seven branches: woven patches, sewn on, lit from the top left; ringed in cord once lit
+  SPACES.forEach((sp, k) => {
+    const a = -Math.PI / 2 + k / SPACES.length * TAU, x = CX + Math.cos(a) * ORBIT, y = CY + Math.sin(a) * ORBIT, S2 = 82 / .46;
+    drawPatch(c, x, y, 82, sp, 1);
+    const arrive = prim.reduce((b, q) => Math.abs(angTo(q.ang, a)) < Math.abs(angTo(b.ang, a)) ? q : b).arrive;
+    const lit = easeIO(clamp((tau - arrive) / RING_T, 0, 1));           // sewn round as this branch's cord arrives
+    if (lit > 0) {
+      const n = 60, sweep = lit * TAU, pts = [], cum = [0];
+      for (let j = 0; j <= n; j++) { const t = -Math.PI / 2 + k * .9 + sweep * j / n; pts.push([x + Math.cos(t) * 90, y + Math.sin(t) * 90]); if (j) cum.push(cum[j - 1] + 90 * sweep / n); }
+      cord(c, pts, cum, cum[n], () => 4.4, 700 + k);
+    }
+  });
+
+  // Liv: light under the embroidery, the glyph in satin, the roots sewn out of its stubs
+  const h = LIV_H, w = h * 549 / 748, X = CX - w * 274 / 549, Y = CY - h * 443 / 748, k = h / 748;
+  const glow = c.createRadialGradient(CX, CY, 0, CX, CY, 149 * k * 1.4);
+  glow.addColorStop(0, 'rgba(255,250,240,.95)'); glow.addColorStop(.2, 'rgba(255,211,94,.8)'); glow.addColorStop(.55, 'rgba(232,154,28,.35)'); glow.addColorStop(1, 'rgba(192,138,20,0)');
+  c.fillStyle = glow; c.beginPath(); c.arc(CX, CY, 149 * k * 1.4, 0, TAU); c.fill();
+  c.save(); c.translate(X, Y); c.scale(k, k);
+  const tails = [];
+  for (const s of RSTRANDS) {
+    const vis = s.reachAt(tau - s.t0); if (vis <= 0) continue;
+    const sewn = stemStitch(c, s.pts, s.cum, vis, d => s.w0 * (1 - .7 * d / Math.max(vis, 1)) * Math.min(1, .5 + vis / 300), 15, s.seed);
+    // the working thread: up through the cloth at the last stitch; pulled back through once the root is done
+    // it draws out as the root starts rather than appearing whole, and is pulled back through at the end
+    const pull = s.depth === 0 && s.seed % 2 === 0 ? easeOut(clamp((tau - s.t0) / .7, 0, 1)) * (tau < s.tEnd ? 1 : 1 - easeIO(clamp((tau - s.tEnd) / .5, 0, 1))) : 0;
+    if (pull > 0 && sewn > 0) { const [x, y, dx, dy] = along(s.pts, s.cum, sewn); tails.push([x, y, dx, dy, s, pull]); }
+  }
+  for (const [x, y, dx, dy, s, pull] of tails) looseThread(c, x, y, dx, dy, 230 * pull, s.w0 * .5, Math.sin(tau * 1.3 + s.sway) * .6, GOLD, clamp(pull * 3, 0, 1));
+  c.restore();
+  c.save(); c.shadowColor = 'rgba(0,0,0,.65)'; c.shadowBlur = 5 * S; c.shadowOffsetX = 1.8 * S; c.shadowOffsetY = 2.6 * S;
+  c.drawImage(LIVE_SATIN, X, Y, w, h); c.restore();
+  c.save(); c.globalCompositeOperation = 'screen'; c.globalAlpha = .32; c.fillStyle = glow; c.beginPath(); c.arc(CX, CY, 149 * k * 1.4, 0, TAU); c.fill(); c.restore();
+
+  // vignette: the cloth falls away into shadow at the edges
+  resetT(c); const vg = c.createRadialGradient(CX, CY, 360, CX, CY, 800);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)'); c.fillStyle = vg; c.fillRect(0, 0, W, H);
+}
+
+function sceneLiv(c, tau) {
+  drawLiv(LN.getContext('2d'), tau);
+  sceneSpaces(c, 3.9);                                                   // the spaces shot, held, is what the dye soaks into
+  dyeSoak(c, LN, CX, CY, lerp(0, 1150, sm(0, 1.4, tau, u => 1 - Math.pow(1 - u, 1.3))), 32);   // ~1 s to reach the corners
+}
+// night dye soaking through the linen from the core. The front is uneven and runs a little further
+// along the weave; ahead of it the cloth is damp and darker; at it the dye pools into a tide line;
+// and single threads wick it on past the front.
+function dyeSoak(c, src, cx, cy, R, seed) {
+  if (R <= 0) return;
+  const r = rng(seed), waves = Array.from({ length: 6 }, (_, k) => [2 + k * 2 + (r() * 3 | 0), r() * TAU, .04 / (1 + k * .6)]);
+  const edge = a => R * (1 + waves.reduce((sum, [f, ph, amp]) => sum + amp * Math.sin(f * a + ph + R * .003), 0) + .05 * Math.pow(Math.abs(Math.cos(2 * a)), 12));
+  const path = new Path2D();
+  for (let i = 0; i <= 240; i++) { const a = i / 240 * TAU, e = edge(a); i ? path.lineTo(cx + Math.cos(a) * e, cy + Math.sin(a) * e) : path.moveTo(cx + e, cy); }
+  path.closePath();
+  c.save(); resetT(c);
+  c.filter = `blur(${10 * S}px)`; c.strokeStyle = 'rgba(30,34,26,.22)'; c.lineWidth = 44; c.stroke(path); c.filter = 'none';   // damp
+  c.save(); c.clip(path); c.drawImage(src, 0, 0, W, H); c.restore();                                                          // dyed
+  c.filter = `blur(${2 * S}px)`; c.strokeStyle = 'rgba(6,8,5,.6)'; c.lineWidth = 7; c.stroke(path); c.filter = 'none';        // tide line
+  const pitch = 4.5;                                                                                                            // wicking
+  for (let k = 0; k < 600; k++) {
+    const a = r() * TAU, e = edge(a) - 2, horiz = r() < .5, len = 4 + Math.pow(r(), 2) * 36;
+    let x = cx + Math.cos(a) * e, y = cy + Math.sin(a) * e;
+    if (horiz) y = Math.round(y / pitch) * pitch; else x = Math.round(x / pitch) * pitch;
+    const dir = horiz ? Math.sign(Math.cos(a)) || 1 : Math.sign(Math.sin(a)) || 1;
+    for (let j = 0; j < 3; j++) {
+      c.fillStyle = alpha(PAL.night, .55 - j * .17);
+      const a0 = len * j / 3, l = len / 3;
+      if (horiz) c.fillRect(dir > 0 ? x + a0 : x - a0 - l, y - .9, l, 1.8); else c.fillRect(x - .9, dir > 0 ? y + a0 : y - a0 - l, 1.8, l);
+    }
+  }
+  c.restore();
+}
+
+// 5. SIGN-OFF — no cut back to day (v4.5). The camera pulls back and lifts off the finished embroidery,
+// still on the night cloth, and OneLyf is sewn in gold satin beneath it, then the tagline in cream,
+// with two French knots between them.
+const SIGNOFF_DUR = 4.2, END_ZOOM = .6, END_Y = 425;                    // END_Y: where the core settles on screen
+function sceneSignoff(c, tau) {
+  const e = sm(0, 1.8, tau, easeIO), zoom = lerp(1.16, END_ZOOM, e), sy = lerp(CY, END_Y, e);
+  drawLiv(c, LIV_DUR + tau, { zoom, y: CY + (CY - sy) / zoom });
+  const x = CX, y = 858;
+  stitchedText(c, 'OneLyf', x, y, 104, GOLD, STRIPES_GOLD, sm(.5, 1.7, tau, easeOut));
+  const kn = sm(1.2, 1.5, tau);
+  if (kn > 0) { c.save(); c.globalAlpha = kn; knot(c, x - 10, y + 30, 5.5, GOLD, .4); knot(c, x + 10, y + 30, 5.5, CREAM, 2.1); c.restore(); }
+  stitchedText(c, 'Many Spaces, Woven Together', x, y + 88, 46, CREAM, STRIPES_CREAM, sm(1.3, 2.5, tau, easeOut));
+}
+
+// ===================== SCORE (v3.4) =====================
+function score(ac, t0, dest) {
+  // v4.7: all the music runs through `duck`, which dips while Liv speaks (9 dB; 4.4 dB since v4.12); music and voice both
+  // go through a gentle limiter so the mix can't clip
+  const lim = ac.createDynamicsCompressor(); lim.threshold.value = -4; lim.knee.value = 2; lim.ratio.value = 20; lim.attack.value = .002; lim.release.value = .12; lim.connect(dest);
+  const master = ac.createGain(); master.gain.value = 1.33; master.connect(lim);   // v4.12: +2.5 dB, the whole mix to ~-18 LUFS
+  const duck = ac.createGain(); duck.connect(master);
+  // v4.12 mix: music up 2 dB and ducked 4.4 dB (was 9) so it stays present under Liv; see VO_GAIN below
+  const MUSIC_GAIN = .7, DUCK = .6;
+  const out = ac.createGain(); out.gain.value = MUSIC_GAIN; out.connect(duck);
+  const bus = ac.createGain();                       // everything plays into the bus
+  const dry = ac.createGain(), wet = ac.createGain();
+  const echoMix = .30;                               // presence of the echo, independent of its time/feedback
+  dry.gain.value = 1 - echoMix; wet.gain.value = echoMix;
+  const dl = ac.createDelay(1.0); dl.delayTime.value = .375;
+  const fb = ac.createGain(); fb.gain.value = .28;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  bus.connect(dry); dry.connect(out);
+  bus.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(out);
+
+  const N = (f, t, d, type, g) => note(ac, bus, f, t0, t, d, type, g);
+  // 0.0 seed: root, then sparse plucks
+  N(pentHz(-1, 0), 0.00, 2.4, 'sine', .22);
+  [0.25, 0.75, 1.25, 1.75].forEach((t, k) => N(pentHz(0, k), t, .8, 'triangle', .13));
+  // 2.0 shell: rising arpeggio as the hex field grows
+  for (let k = 0; k < 8; k++) N(pentHz(k < 5 ? 0 : 1, k), 2.0 + k * 0.25, .7, 'triangle', .14);
+  N(pentHz(-1, 2), 2.00, 2.4, 'sine', .18);
+  // 4.0 spaces: one note per space as it blooms, plus a soft tick (cues track the discs)
+  SPACES.forEach((_, k) => { const t = 4.0 + k * 0.25; N(pentHz(k < 5 ? 1 : 2, k), t, .9, 'triangle', .16); noiseBurst(ac, bus, t0, t, .05, .05, 60 + k); });
+  N(pentHz(-1, 0), 4.00, 3.9, 'sine', .20);
+  // 8.0 liv: the swell on the cut to night
+  N(pentHz(-1, 4), 8.00, LIV_DUR, 'sine', .26);
+  // plucks under the growth, every 1.5 s, stopping 2 s short of the sign-off so they don't muddy it
+  // (an octave up since v4.6: at 110-165 Hz they vanished on small speakers)
+  for (let t = 9.0, k = 0; t < 8.0 + LIV_DUR - 2; t += 1.5, k++) N(pentHz(0, k), t, 1.8, 'sine', .09);
+  // v4.6: the bed. Slow-swelling chords that overlap as they fade, so there is never silence. Kept to
+  // 165-660 Hz, low-passed at 1.1 kHz and well under the notes, to leave the voice band clear.
+  const bedLP = ac.createBiquadFilter(); bedLP.type = 'lowpass'; bedLP.frequency.value = 1100; bedLP.Q.value = .5; bedLP.connect(bus);
+  const pad = (fs, t, d, g = .025) => fs.forEach(f => [-5, 5].forEach(ct => {
+    const o = ac.createOscillator(), e = ac.createGain(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = ct;
+    e.gain.setValueAtTime(0, t0 + t); e.gain.linearRampToValueAtTime(g, t0 + t + 1.2); e.gain.setValueAtTime(g, t0 + t + Math.max(1.2, d - .2)); e.gain.linearRampToValueAtTime(0, t0 + t + d + 1.4);
+    o.connect(e); e.connect(bedLP); o.start(t0 + t); o.stop(t0 + t + d + 1.5);
+  }));
+  const CHORD = {
+    A: [pentHz(0, 0), pentHz(0, 3), pentHz(1, 1)],                      // A3 E4 B4
+    F: [pentHz(-1, 4), pentHz(0, 2), pentHz(1, 0)],                     // F#3 C#4 A4
+    E: [pentHz(-1, 3), pentHz(0, 1), pentHz(0, 4)],                     // E3 B3 F#4
+  };
+  pad(CHORD.A, 0, 4.2); pad(CHORD.F, 4.0, 4.2); pad(CHORD.A, 8.0, 3.1);
+  for (let t = 11.0, k = 0; t < 8.0 + LIV_DUR - .3; t += 2.8, k++) pad(CHORD['EFA'[k % 3]], t, 2.9);
+  pad(CHORD.A, 8.0 + LIV_DUR, SIGNOFF_DUR, .028);
+  // stitch ticks: faint, high, every half second or so while the roots and cords are being sewn
+  { const r = rng(606); for (let t = 8.7; t < 8.0 + CORD_HOLD; t += .45 + r() * .2) N(pentHz(2, r() * 5 | 0), t, .22, 'triangle', .012); }
+  // a soft chime as each branch's cord arrives and its ring is sewn round
+  HYPHAE.filter(h => h.op >= .8).forEach((h, k) => N(pentHz(1, k), 8.0 + h.arrive, 1.6, 'sine', .06));
+  [0, 2, 4].forEach((s, k) => N(pentHz(1, s), 8.0 + k * 0.25, 1.6, 'sine', .14));
+  noiseBurst(ac, bus, t0, 8.0, .35, .16, 77);
+  // signoff: two notes and the root under them (moves with LIV_DUR since v3.3)
+  const so = 8.0 + LIV_DUR;
+  N(pentHz(-1, 0), so, SIGNOFF_DUR, 'sine', .22);                       // under the pull-back
+  N(pentHz(1, 0), so + .5, 1.2, 'triangle', .18);                       // as OneLyf is sewn in
+  N(pentHz(1, 3), so + 1.3, 1.4, 'triangle', .16);                      // as the tagline is
+  // Liv's voice-over (v4.8): three passages from the one take, each kept whole with its own pauses
+  // (15 ms fades at the cuts) and placed on its beat; the music ducks under each passage.
+  // v4.12: the voice runs through its own chain (80 Hz high-pass, then a gentle 3:1 compressor) so her
+  // peaks no longer drive the limiter, and sits at about -20 LUFS, ~10 LU over the music under her.
+  const VO_GAIN = .22;                                                 // low, because DynamicsCompressor adds its own makeup gain
+  const voHP = ac.createBiquadFilter(); voHP.type = 'highpass'; voHP.frequency.value = 80;
+  const voComp = ac.createDynamicsCompressor(); voComp.threshold.value = -24; voComp.knee.value = 6; voComp.ratio.value = 3; voComp.attack.value = .005; voComp.release.value = .15;
+  voHP.connect(voComp); voComp.connect(master);
+  if (VO_BUF) {
+    // the Liv passage starts 95 ms later than liv-vo-5.js says, after a click before "I'm", and 95 ms
+    // later on the timeline so "I'm" lands where it did
+    const L = { ...window.LIV_VO.passages, liv: [7.955, window.LIV_VO.passages.liv[1]] }, at = [
+      ['thesis', 0.8],                                                   // seed -> spaces, ends just before the dye
+      ['liv', 9.495],                                                    // roots; "so your whole life works as one" as the rings close
+      ['title', so + .5],                                                // as OneLyf, then the tagline, is sewn in
+    ];
+    for (const [k, t] of at) {
+      const [a, b] = L[k], d = b - a, src = ac.createBufferSource(), g = ac.createGain();
+      src.buffer = VO_BUF; src.connect(g); g.connect(voHP);
+      g.gain.setValueAtTime(0, t0 + t); g.gain.linearRampToValueAtTime(VO_GAIN, t0 + t + .015);
+      g.gain.setValueAtTime(VO_GAIN, t0 + t + d - .015); g.gain.linearRampToValueAtTime(0, t0 + t + d);
+      src.start(t0 + t, a, d);
+    }
+    const spans = [];                                                    // runs of speech, merging gaps under 1 s
+    for (const [k, t] of at) { const d = L[k][1] - L[k][0], last = spans[spans.length - 1]; if (last && t - last[1] < 1) last[1] = t + d; else spans.push([t, t + d]); }
+    duck.gain.setValueAtTime(1, t0);
+    for (const [a, b] of spans) {
+      duck.gain.setValueAtTime(1, t0 + a - .3); duck.gain.linearRampToValueAtTime(DUCK, t0 + a);
+      duck.gain.setValueAtTime(DUCK, t0 + b); duck.gain.linearRampToValueAtTime(1, t0 + b + .5);
+    }
+  }
+}
+
+// ===================== FILM =====================
+const TIMELINE = [
+  { name: 'seed',    dur: 2.0, fn: sceneSeed },
+  { name: 'shell',   dur: 2.0, fn: sceneShell },
+  { name: 'spaces',  dur: 4.0, fn: sceneSpaces },
+  { name: 'liv',     dur: LIV_DUR, fn: sceneLiv },
+  { name: 'signoff', dur: SIGNOFF_DUR, fn: sceneSignoff },
+];
+// Liv's voice-over, decoded once; an AudioBuffer plays in any context, live or offline
+let VO_BUF = null;
+const decodeVO = () => {
+  if (!window.LIV_VO) return Promise.resolve();
+  const b64 = window.LIV_VO.src.slice(window.LIV_VO.src.indexOf(',') + 1), bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new OfflineAudioContext(2, 48000, 48000).decodeAudioData(u8.buffer).then(buf => { VO_BUF = buf; });
+};
+Promise.all([...SPACES.map(sp => sp.img), CREST_THREAD, LIVE_THREAD].map(i => i.decode()).concat(document.fonts.load('96px Fraunces'), document.fonts.load('52px Fraunces'), decodeVO()))
+  .then(() => {
+    LINEN_DAY = makeLinen(PAL.paper, 22, DAY_LINEN);
+    LINEN_NIGHT = makeLinen(PAL.night, 21, NIGHT_LINEN, 560);
+    HEX_SEWN = makeHexSewn();
+    CREST_SATIN = makeSatin(CREST_THREAD, 549, 748, 4, BRONZE);
+    LIVE_SATIN = makeSatin(LIVE_THREAD, 549, 748, 4, GOLD);
+    TXT = layer(); TXT2 = layer(); STRIPES_GOLD = makeStripes(GOLD); STRIPES_CREAM = makeStripes(CREAM);
+    defineFilm({ timeline: TIMELINE, score, format: { ar: '1:1' } });
+  });
+</script>
