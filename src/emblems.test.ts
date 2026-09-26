@@ -60,6 +60,11 @@ test('the lockups carry no live text (outlined, so no font is needed)', () => {
   }
 })
 
+test('build.py never rewrites the persistent emblems or flat marks', () => {
+  const src = readFileSync(new URL('../scripts/emblems/build.py', import.meta.url), 'utf8')
+  assert.doesNotMatch(src, /onelyf-mark-(light|dark)\.svg|onelyf-app-icon\.svg|disc_svg|'emblems'/)
+})
+
 test('tagline is the canonical Title Case line', async () => {
   const src = readFileSync(new URL('./components/SpaceEmblem.tsx', import.meta.url), 'utf8')
   assert.match(src, /ONELYF_TAGLINE = 'Many Spaces, Woven Together'/)

@@ -1,5 +1,5 @@
 // Rasterise the woven cut into the PNGs apps ship (home-screen icons, favicons, the social card).
-//   python3 scripts/emblems/build.py woven && node scripts/emblems/export_png.mjs
+//   python3 scripts/emblems/build.py && node scripts/emblems/export_png.mjs
 // Playwright isn't a dependency of this repo (same arrangement as film/render-pw.mjs):
 //   PLAYWRIGHT  where to import it from (a package name or a path to its index.mjs); default 'playwright'
 //   CHROMIUM    an explicit browser executable, when the bundled one isn't installed

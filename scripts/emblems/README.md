@@ -4,12 +4,12 @@
 python3 scripts/emblems/build.py
 ```
 
-Writes `src/assets/emblems/<branch>.svg` (7), the flat `src/assets/onelyf-{mark-light,mark-dark,app-icon}.svg`, and the woven cut below. `build.py woven` writes only the woven cut and leaves the flat canon untouched.
+Writes the woven cut and the lockups below. The branch emblems and the flat marks are persistent assets that `build.py` never rewrites (see the end of this file).
 
 ## The woven cut
 
 ```
-python3 scripts/emblems/build.py woven
+python3 scripts/emblems/build.py
 PLAYWRIGHT=<path to playwright/index.mjs> CHROMIUM=<browser, optional> node scripts/emblems/export_png.mjs
 ```
 
@@ -33,6 +33,6 @@ The social card sets its lettering in Fraunces from `fonts/fraunces-latin.woff2`
 
 Copy: always Title Case. Tagline: `Many Spaces, Woven Together`.
 
-### Known drift in the flat cut
+### Persistent assets
 
-`build.py` is deterministic, but its output no longer matches the committed flat `emblems/hlthlyf.svg` (the braid crosses the other way at the foot) and so the three flat marks that embed it. The committed files are what has shipped; the generator changed after they were written. Until that is settled, regenerate with `build.py woven`, which leaves the flat canon untouched.
+The branch emblems (`src/assets/emblems/*.svg`) and the flat marks (`src/assets/onelyf-{mark-light,mark-dark,app-icon}.svg`) are saved as shipped and are never rewritten by `build.py` (owner, 2026-09-26). The woven mark embeds each emblem file's body directly, so it always matches them. `set_patch.py`, `lyf_emblems*.py` and `final_mark.py` are the record of how they were drawn; note they no longer reproduce the shipped `hlthlyf.svg` exactly (the braid crosses the other way at the foot), so regenerate one only on purpose and review the diff.
