@@ -1,8 +1,8 @@
 # Handoff: the woven OneLyf mark and icon
 
 **For:** the onelyf.net session (website and design).
-**From:** the film session, 2026-09-26. The source is on `One-Lyf/onelyf-design-system`, branch
-`claude/vibrant-mccarthy-mks5dm` (PR #121) until that merges, then on `main`.
+**From:** the film session, 2026-09-26. The source is on `One-Lyf/onelyf-design-system` `main`
+(merged in PR #121).
 
 ## The ask
 
@@ -73,10 +73,11 @@ The techniques, by function name in `onelyf.v4.8-woven.html`:
 | # | Asset | Size / format | Ground | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | Woven mark, dark | SVG, 512 viewBox | night `#171b16` linen | the hero; closest to `woven-mark-from-film.png` |
-| 2 | Woven mark, light | SVG, 512 viewBox | cream `#f4efe1` linen | glyph in bronze satin (crest palette) or gold (live); see open decision (a) |
-| 3 | Woven app icon | SVG + PNG 1024, 512, 192 | night linen, full-bleed | PWA `maskable`: keep the 7 patches inside the 80% safe zone |
-| 4 | Apple touch icon | PNG 180 | night linen | from 3 |
-| 5 | Favicon | SVG + PNG 32, 16 (+ `.ico`) | transparent or night | **simplified**: at 16–32 px thread texture is noise. Use the satin Liv glyph alone, or glyph + 7 dots, with no linen and no cord detail |
+| 2 | Woven mark, light | SVG, 512 viewBox | cream `#f4efe1` linen | glyph in bronze satin with a soft gold glow under the stitches; see decision (a) |
+| 3a | Woven app icon, onelyf.net | SVG + PNG 1024, 512, 192 | night linen, full-bleed | the full mandala; PWA `maskable`: keep the 7 patches inside the 80% safe zone |
+| 3b | Woven app icon, Liv Console | SVG + PNG 1024, 512, 192 | night linen, full-bleed | the satin Liv glyph alone, inside the 80% safe zone |
+| 4 | Apple touch icon | PNG 180 | night linen | from 3a (onelyf.net) and 3b (Liv Console) |
+| 5 | Favicon | SVG + PNG 32, 16 (+ `.ico`) | transparent or night | **simplified**: at 16–32 px thread texture is noise. The Liv glyph alone (decision (b)), with no linen and no cord detail |
 | 6 | Woven wordmark lockups | SVG: horizontal and stacked, light and dark | both | "OneLyf" satin in gold on dark (goldDeep on light), tagline in cream (ink on light), two knot dots between. Fraunces (vendored in `film/fonts/`); outline the text so the site doesn't need the font |
 | 7 | OG / social card | PNG 1200×630 | night linen | mark on the left, lockup on the right; `woven-lockup-final-frame.png` is the 1:1 version of this |
 | 8 | Flat fallback | keep today's `onelyf-mark-*.svg` | | for print, very small sizes and reduced-texture contexts |
@@ -120,10 +121,10 @@ The techniques, by function name in `onelyf.v4.8-woven.html`:
 - One glyph, split by state: **crest = OneLyf** (dormant, works with the AI off), **live = Liv** (lit).
 - Copy is always Title Case. Tagline constant: `ONELYF_TAGLINE` = `Many Spaces, Woven Together`.
 
-## Open decisions for the owner
+## Decisions (Jeff, 2026-09-26)
 
-- **(a) Light-ground glyph:** the crest (bronze, dormant) or the live glyph (gold)? The film uses the
-  crest on day scenes and the live glyph at night.
-- **(b) Favicon:** the glyph alone, or the glyph + 7 coloured dots?
-- **(c) App icon:** the whole mandala, or the glyph on linen with a single cord ring? The mandala gets
-  busy under ~64 px.
+- **(a) Light-ground glyph:** the glyph in **bronze** satin (the crest's thread) **with a golden glow**.
+  Under the brand rule a glow means Liv is lit, so this reads as the live state sewn in bronze; keep
+  the glow soft and under the stitches.
+- **(b) Favicon:** the **glyph alone**.
+- **(c) App icon:** **onelyf.net** gets the **full mandala**; **Liv Console** gets the **glyph alone**.

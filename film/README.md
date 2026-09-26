@@ -16,6 +16,7 @@ The 1:1 brand film, drawn on a canvas. Each `onelyf.vX.Y.html` is one cut; the n
 | `render-pw.mjs` | renders every drawn frame and builds a silent mp4 (needs Playwright, Chrome, ffmpeg) |
 | `render-wav.mjs` | renders the score to `score.wav` |
 | `renders/` | finished cuts with sound |
+| `teasers/` | pre-launch cuts from the v4.12 render: two 1:1 clips (0–9.3 s thesis, 9.2–16.8 s "I'm Liv") and three 2x-res stills |
 
 Open an html file in a browser to scrub and play it (press "sound: on" before play for the score).
 
