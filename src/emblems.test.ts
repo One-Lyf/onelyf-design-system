@@ -33,3 +33,8 @@ test('the mark seats every branch accent, in ring order', () => {
     assert.deepEqual(seats, branchOrder.map((k) => spaces[k].accent.toLowerCase()), f)
   }
 })
+
+test('tagline is the canonical Title Case line', async () => {
+  const src = readFileSync(new URL('./components/SpaceEmblem.tsx', import.meta.url), 'utf8')
+  assert.match(src, /ONELYF_TAGLINE = 'Many Spaces, Woven Together'/)
+})
