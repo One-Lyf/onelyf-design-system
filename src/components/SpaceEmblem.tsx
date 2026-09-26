@@ -18,6 +18,10 @@ import wovenLightUrl from '../assets/onelyf-mark-woven-light.svg?no-inline'
 import wovenDarkUrl from '../assets/onelyf-mark-woven-dark.svg?no-inline'
 import wovenAppIconUrl from '../assets/onelyf-app-icon-woven.svg?no-inline'
 import faviconUrl from '../assets/onelyf-favicon.svg?no-inline'
+import lockupHLightUrl from '../assets/lockups/onelyf-lockup-horizontal-light.svg?no-inline'
+import lockupHDarkUrl from '../assets/lockups/onelyf-lockup-horizontal-dark.svg?no-inline'
+import lockupSLightUrl from '../assets/lockups/onelyf-lockup-stacked-light.svg?no-inline'
+import lockupSDarkUrl from '../assets/lockups/onelyf-lockup-stacked-dark.svg?no-inline'
 import { spaces, type BranchKey } from '../tokens'
 
 /** The OneLyf tagline. Title Case, always. */
@@ -64,6 +68,14 @@ export type OneLyfMarkVariant =
 export const MARK_URLS: Record<OneLyfMarkVariant, string> = {
   light: markLightUrl, dark: markDarkUrl, 'app-icon': appIconUrl,
   'woven-light': wovenLightUrl, 'woven-dark': wovenDarkUrl, 'woven-app-icon': wovenAppIconUrl, favicon: faviconUrl,
+}
+
+/** Woven wordmark lockups: the mark with "OneLyf" and the tagline, lettering outlined (no font
+ *  needed). light / dark follow the page ground, like the marks. */
+export type OneLyfLockup = 'horizontal-light' | 'horizontal-dark' | 'stacked-light' | 'stacked-dark'
+export const LOCKUP_URLS: Record<OneLyfLockup, string> = {
+  'horizontal-light': lockupHLightUrl, 'horizontal-dark': lockupHDarkUrl,
+  'stacked-light': lockupSLightUrl, 'stacked-dark': lockupSDarkUrl,
 }
 
 export interface OneLyfMarkProps {

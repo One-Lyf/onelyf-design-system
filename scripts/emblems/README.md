@@ -21,7 +21,8 @@ PLAYWRIGHT=<path to playwright/index.mjs> CHROMIUM=<browser, optional> node scri
 | `src/assets/onelyf-mark-woven-light.svg` | day: the crest in bronze (OneLyf at rest), on cream linen |
 | `src/assets/onelyf-app-icon-woven.svg` | the glyph inside one couched cord ring, full-bleed night linen, inside the maskable safe zone |
 | `src/assets/onelyf-favicon.svg` | the small cut: glyph + the seven branch dots, no texture, heavier strands |
-| `src/assets/icons/*.png` | `export_png.mjs`: app icon 1024/512/192, `apple-touch-icon.png` 180, favicon 48/32/16, `og-card.png` 1200x630 |
+| `src/assets/lockups/onelyf-lockup-{horizontal,stacked}-{light,dark}.svg` | `lockup.py`: the woven mark with "OneLyf" in satin, two knots and the tagline; Fraunces outlined with fontTools (`pip install fonttools brotli`), so no font is needed |
+| `src/assets/icons/*` | `export_png.mjs`: app icon 1024/512/192, `apple-touch-icon.png` 180, favicon 48/32/16 and `favicon.ico` (all three), `og-card.png` 1200x630 |
 
 The social card sets its lettering in Fraunces from `fonts/fraunces-latin.woff2` (SIL Open Font License), inlined at export, so ship the PNG rather than the SVG source.
 
@@ -31,3 +32,7 @@ The social card sets its lettering in Fraunces from `fonts/fraunces-latin.woff2`
 - `final_mark.py`: the live Liv glyph (`src/assets/glyph-live.svg`, lightened on night grounds) at the centre. Tapered, seeded mycelium hyphae run Liv→branch, branch↔branch, plus faint chords.
 
 Copy: always Title Case. Tagline: `Many Spaces, Woven Together`.
+
+### Known drift in the flat cut
+
+`build.py` is deterministic, but its output no longer matches the committed flat `emblems/hlthlyf.svg` (the braid crosses the other way at the foot) and so the three flat marks that embed it. The committed files are what has shipped; the generator changed after they were written. Until that is settled, regenerate with `build.py woven`, which leaves the flat canon untouched.

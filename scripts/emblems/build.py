@@ -30,4 +30,11 @@ open(os.path.join(A,'onelyf-mark-woven-light.svg'),'w').write(woven_mark('light'
 open(os.path.join(A,'onelyf-app-icon-woven.svg'),'w').write(woven_app_icon())
 open(os.path.join(A,'onelyf-favicon.svg'),'w').write(favicon())
 open(os.path.join(HERE,'og-card.svg'),'w').write(og_card())
-print('wrote', (f'{len(SET2)} emblems + 3 flat marks + ' if FLAT else '') + '4 woven marks (+ og-card.svg source)')
+# Wordmark lockups (lockup.py): the woven mark with "OneLyf" and the tagline, outlined, so no font
+# is needed to render them. Needs fontTools + brotli (pip install fonttools brotli).
+from lockup import lockup
+L=os.path.join(A,'lockups'); os.makedirs(L,exist_ok=True)
+for lay in ('horizontal','stacked'):
+    for gr in ('light','dark'):
+        open(os.path.join(L,f'onelyf-lockup-{lay}-{gr}.svg'),'w').write(lockup(gr,lay))
+print('wrote', (f'{len(SET2)} emblems + 3 flat marks + ' if FLAT else '') + '4 woven marks + 4 lockups (+ og-card.svg source)')

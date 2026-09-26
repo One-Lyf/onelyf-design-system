@@ -41,15 +41,23 @@ test('the favicon seats every branch accent, in ring order', () => {
 })
 
 test('woven cut: scalable, token-only thread, and the PNG exports exist', () => {
-  for (const f of ['onelyf-mark-woven-light.svg', 'onelyf-mark-woven-dark.svg', 'onelyf-app-icon-woven.svg', 'onelyf-favicon.svg']) {
+  const lockups = ['horizontal-light', 'horizontal-dark', 'stacked-light', 'stacked-dark'].map((v) => `lockups/onelyf-lockup-${v}.svg`)
+  for (const f of ['onelyf-mark-woven-light.svg', 'onelyf-mark-woven-dark.svg', 'onelyf-app-icon-woven.svg', 'onelyf-favicon.svg', ...lockups]) {
     const svg = readFileSync(new URL(`./assets/${f}`, import.meta.url), 'utf8')
     assert.match(svg.slice(0, svg.indexOf('>')), /viewBox=/, f)
     assert.doesNotMatch(svg.slice(0, svg.indexOf('>')), /\b(width|height)=/, `${f} root must scale`)
     assert.ok(svg.length < 250_000, `${f} is ${svg.length} bytes (budget 250 KB)`)
   }
   const icons = readdirSync(new URL('./assets/icons/', import.meta.url)).sort()
-  for (const f of ['apple-touch-icon.png', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png', 'og-card.png',
+  for (const f of ['apple-touch-icon.png', 'favicon.ico', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png', 'og-card.png',
     'onelyf-app-icon-1024.png', 'onelyf-app-icon-192.png', 'onelyf-app-icon-512.png']) assert.ok(icons.includes(f), f)
+})
+
+test('the lockups carry no live text (outlined, so no font is needed)', () => {
+  for (const v of ['horizontal-light', 'horizontal-dark', 'stacked-light', 'stacked-dark']) {
+    const svg = readFileSync(new URL(`./assets/lockups/onelyf-lockup-${v}.svg`, import.meta.url), 'utf8')
+    assert.doesNotMatch(svg, /<text/, v)
+  }
 })
 
 test('tagline is the canonical Title Case line', async () => {
