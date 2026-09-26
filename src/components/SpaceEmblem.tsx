@@ -17,7 +17,7 @@ import appIconUrl from '../assets/onelyf-app-icon.svg?no-inline'
 import { spaces, type BranchKey } from '../tokens'
 
 /** The OneLyf tagline. Title Case, always. */
-export const ONELYF_TAGLINE = 'One Life, Many Spaces'
+export const ONELYF_TAGLINE = 'Many Spaces, Woven Together'
 
 export const EMBLEM_URLS: Record<BranchKey, string> = {
   finlyf: finlyfUrl, homlyf: homlyfUrl, hlthlyf: hlthlyfUrl, gudlyf: gudlyfUrl,
