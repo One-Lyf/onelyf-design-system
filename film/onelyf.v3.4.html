@@ -1,0 +1,372 @@
+<!doctype html>
+<meta charset="utf-8">
+<link href="fonts/fraunces.css" rel="stylesheet">
+<title>onelyf</title>
+<style>
+  body{margin:0;background:#111;color:#ccc;font:13px/1.4 ui-monospace,Menlo,monospace;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px}
+  canvas#c{width:min(92vw,720px);height:auto;background:#000;box-shadow:0 0 0 1px #333}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center}
+  button{background:#222;color:#ddd;border:1px solid #444;padding:4px 10px;cursor:pointer;font:inherit}
+  input[type=range]{width:320px}
+</style>
+<canvas id="c" width="1080" height="1080"></canvas>
+<script src="core.js"></script>
+<script src="assets.js"></script>
+<script>
+'use strict';
+// ============================================================
+// ONELYF — "Many Spaces, Woven Together"
+// v2 (2026-09-26): the seven BRANCHES are the design-system woven patch emblems (Family is a tier,
+// not a branch: Waves took its seat), the anchor is the real Liv glyph (crest while dormant, live once
+// Liv ignites), and Liv reaches the branches through a mycelium network of hyphae.
+// Colours are the OneLyf design-system tokens verbatim (onelyf-design-system/src/tokens.ts).
+// Gold #c08a14 is Liv's accent and the film's anchor. The only orange is HomLyf terracotta.
+// No lettering anywhere but the sign-off (house rule).
+// ============================================================
+
+// ===================== BRIEF & BEAT SHEET =====================
+// Subject: the OneLyf founding principle — one shell, seven life-spaces, Liv as the seam between them.
+// Format: 1:1, short side 1080 logical units, drawn 12 fps, output 24 fps.
+// t     dur   scene      camera    what changes                                  kit                        sound
+// 0.0   2.0   seed       pull-back gold seed dot, construction, ripples outward  seedDot ripples construct  root + plucks
+// 2.0   2.0   shell      static    hex shell grows, orbits + seven seats struck  hexLattice dashedRing      rising arpeggio
+// 4.0   4.0   spaces     static    seven space discs bloom into the seats        discs surface wob          one note per space
+// 8.0   5.7   liv        push-in   blot to night, roots grow into the hyphae     blot aster dotBurst        swell
+// 13.7  2.0   signoff    static    spaces settle to the rim, mark writes on      signOff dottedArc          two-note close
+
+// ===================== PALETTE =====================
+// OneLyf DS light tokens. fills[] = the seven space accents, in launch order.
+usePalette(makePalette({
+  paper: '#f4efe1', paperBand: 'rgba(255,253,247,.30)', ink: '#1c2b21', night: '#171b16',
+  chalk: '#e8e4d6', chalkDim: '#767c6c', guide: 'rgba(31,90,60,.30)',
+  fills:  ['#c08a14', '#bf6b49', '#6f9270', '#5d648f', '#b36c42', '#6f8090', '#2f7fa8'],
+  shade:  '#5e6c60', light: '#fffdf7', blush: '#c08a14',
+  accents: ['#c08a14', '#1f7a4d', '#8d6b52', '#6f9270'],
+  inks:   ['#1c2b21', '#c08a14', '#1f7a4d'],
+  green:  '#1f7a4d', goldDeep: '#8a630e',
+  finish: 'ink',
+}));
+
+// ===================== SPACES =====================
+// Seven life-spaces. Each is a disc in its own accent with one plain emblem — no text.
+const SPACES = [
+  { key: 'finlyf',   col: '#c08a14', mark: 'coin'   },
+  { key: 'homlyf',   col: '#bf6b49', mark: 'bowl'   },
+  { key: 'hlthlyf',  col: '#6f9270', mark: 'sprig'  },
+  { key: 'gudlyf',   col: '#5d648f', mark: 'spark'  },
+  { key: 'wrklyf',   col: '#b36c42', mark: 'hex'    },
+  { key: 'skoollyf', col: '#6f8090', mark: 'rule'   },
+  { key: 'waves',    col: '#2f7fa8', mark: 'wave'   },
+];
+
+// Design-system art, embedded as data URIs (assets.js) so the canvas never taints.
+const A = window.ONELYF_ASSETS;
+const img = src => { const i = new Image(); i.src = src; return i; };
+SPACES.forEach(sp => { sp.img = img(A.emblems[sp.key]); });
+const GLYPH = { crest: img(A.crest), live: img(A.live), liveNight: img(A.liveNight) };
+const HYPHAE = { night: img(A.hyphaeNight), paper: img(A.hyphaePaper) };   // drawn at film geometry: 1080 square
+
+// Liv's roots growing (v3.4). v3.3 grew the Liv Builder glyph's root cascade through a mask; that
+// cascade is two small copies of the glyph itself, so it read as a fractal, too perfect for roots
+// worming their way out. Now the live glyph's own root stubs stay (the knot-shaped part), and seeded
+// procedural roots grow out of their tips: persistent random-walk strands with wandering curvature,
+// the odd kink, a pull downward that weakens with each branch order, uneven branching, dead ends,
+// and a surge-and-pause speed per strand. Drawn tapered in the hyphae's gold, tip lit while it grows.
+// Everything is in the glyph's own 549 x 748 box (core at 274, 443) and scaled onto the film.
+// Stub tips, measured off a gridded render of liveNight: [x, y, heading in degrees, 90 = straight down].
+const ROOT_TIPS = [
+  [88, 474, 165], [124, 497, 125], [157, 542, 118], [109, 565, 130], [75, 568, 150], [119, 576, 112],
+  [153, 590, 105], [183, 600, 95], [210, 585, 82], [250, 619, 96], [274, 675, 90], [300, 619, 84],
+  [340, 584, 98], [366, 600, 85], [397, 591, 75], [394, 542, 62], [431, 576, 68], [472, 568, 30],
+  [416, 507, 55], [461, 471, 15],
+];
+// The overall shape is a rounded dome under the glyph, like a well-grown tree turned over: each stub
+// grows one main root sized to reach the dome's edge, every root stops near that edge (a small random
+// margin keeps the outline soft), and the main roots all take about as long, so the dome fills out
+// evenly. The individual roots still wander, kink and branch unevenly inside it.
+const ROOT_DOME = { x: 274, y: 470, rx: 400, ry: 390 };   // box units; clear of the two lower emblems
+const domeR = (x, y) => Math.hypot((x - ROOT_DOME.x) / ROOT_DOME.rx, (y - ROOT_DOME.y) / ROOT_DOME.ry);
+const angTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+const RSTRANDS = (() => {
+  const r = rng(404), out = [];
+  // position along a strand at time u after its start: steady speed plus a surge that never reverses
+  const reachAt = (s, u) => u <= 0 ? 0 : Math.min(s.len, s.v * u + s.A * (Math.sin(s.w * u + s.ph) - Math.sin(s.ph)));
+  // how far a root can run from (x, y) along angle a before it leaves the dome
+  const toEdge = (x, y, a) => { let d = 0; while (domeR(x + Math.cos(a) * d, y + Math.sin(a) * d) < 1 && d < 900) d += 4; return d; };
+  function strand(x, y, a, len, w0, depth, t0, v) {
+    const pts = [[x, y]], cum = [0], edge = .93 + r() * .1;
+    let ang = a, curv = (r() - .5) * .05, L = 0;
+    while (L < len) {
+      curv = clamp((curv + (r() - .5) * .04) * .93, -.07, .07);
+      ang += curv + (r() - .5) * .1;
+      if (r() < .012) ang += (r() - .5) * .6;                           // a stone in the way
+      ang += angTo(ang, Math.atan2(y - 443, x - 274)) * [.035, .02, .01, .005][depth];  // outward from the core
+      if (y < 470) ang += angTo(ang, Math.PI / 2) * .3;                 // never climb into the crown
+      const st = 7 * (.7 + r() * .6);
+      x += Math.cos(ang) * st; y += Math.sin(ang) * st; L += st;
+      pts.push([x, y]); cum.push(L);
+      if (domeR(x, y) > edge) break;
+    }
+    const w = TAU * (.7 + r() * .9);
+    const s = { pts, cum, len: L, w0, t0, v, w, A: .6 * v / w, ph: r() * TAU };
+    out.push(s);
+    if (depth >= 3 || pts.length < 6) return;
+    const nb = Math.floor(r() * [3, 2.4, 1.6][depth]) + (depth === 0 ? 1 : 0);
+    for (let k = 0; k < nb; k++) {
+      const i = 2 + Math.floor(r() * (pts.length * .8 - 2)), f = cum[i] / L;
+      let u = 0; while (reachAt(s, u) < cum[i]) u += .02;              // when the parent's tip passes here
+      const side = r() < .5 ? -1 : 1, da = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
+      strand(pts[i][0], pts[i][1], da + side * (.35 + r() * .8), (L - cum[i]) * (.3 + r() * .6) + r() * 30,
+        w0 * (1 - .55 * f) * (.55 + r() * .25), depth + 1, t0 + u + r() * .2, v * (.8 + r() * .3));
+    }
+  }
+  for (const [x, y, deg] of ROOT_TIPS) {                                 // every stub grows one main root
+    const a = deg * Math.PI / 180 + (r() - .5) * .3, len = toEdge(x, y, a) * (.9 + r() * .15);
+    strand(x, y, a, len, 9 + r() * 5, 0, .7 + r() * .35, len / (2.4 + r() * .5));
+  }
+  out.forEach(s => { s.col = mix('#c9964a', '#d8a83c', r()); s.reachAt = u => reachAt(s, u); });
+  return out;
+})();
+function drawRoots(c, tau) {
+  c.save(); c.lineCap = 'round';
+  for (const s of RSTRANDS) {
+    const vis = s.reachAt(tau - s.t0);
+    if (vis <= 0) continue;
+    const { pts, cum } = s; c.strokeStyle = s.col;
+    let i = 1;
+    for (; i < pts.length && cum[i] <= vis; i++) {
+      c.lineWidth = s.w0 * (1 - .8 * cum[i] / vis) * Math.min(1, .45 + vis / 300);   // thin at the growing tip
+      c.beginPath(); c.moveTo(pts[i - 1][0], pts[i - 1][1]); c.lineTo(pts[i][0], pts[i][1]); c.stroke();
+    }
+    if (vis < s.len - .5) {                                               // the hyphal tip, lit while it grows
+      const [x, y] = pts[i - 1];
+      c.fillStyle = alpha('#ffd35e', .85); c.beginPath(); c.arc(x, y, s.w0 * .45, 0, TAU); c.fill();
+    }
+  }
+  c.restore();
+}
+// tau: seconds into the liv scene. The live glyph, with its roots grown that far out of it, on its core.
+function livRoots(c, x, y, h, tau) {
+  const w = h * 549 / 748, X = x - w * 274 / 549, Y = y - h * 443 / 748;
+  c.save(); c.translate(X, Y); c.scale(h / 748, h / 748); drawRoots(c, tau); c.restore();
+  c.drawImage(GLYPH.liveNight, X, Y, w, h);
+}
+
+// one branch: its woven patch emblem, radius r (the patch disc fills 92% of its square)
+function drawSpace(c, x, y, r, sp, seed, mode = 'ink') {
+  if (r < 1) return;
+  const S = r / .46;
+  c.save(); if (mode === 'blueprint') c.globalAlpha = .94;
+  c.drawImage(sp.img, x - S / 2, y - S / 2, S, S); c.restore();
+}
+
+// v1's hand-drawn disc + emblem, kept for reference; no longer called.
+function drawSpaceV1(c, x, y, r, sp, seed, mode = 'ink') {
+  if (r < 1) return;
+  const ink = mode !== 'blueprint', line = ink ? PAL.ink : PAL.chalk;
+  const disc = circPath(x, y, r), box = [x - r, y - r, r * 2, r * 2];
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
+  if (ink) { c.fillStyle = sp.col; c.fill(disc); surface(c, disc, box, { seed, color: shade(sp.col, .45), alpha: .3, gap: 5, len: 10, grain: 90 }); }
+  c.save(); c.clip(disc);
+  const em = ink ? tint(sp.col, .72) : PAL.chalk, u = r / 52;   // emblem colour + unit scale
+  c.strokeStyle = em; c.fillStyle = em; c.lineWidth = 2.6 * u; c.globalAlpha = .95;
+  if (sp.mark === 'coin')  for (const k of [1, .62, .3]) { c.beginPath(); c.arc(x, y, r * .58 * k, 0, TAU); c.stroke(); }
+  if (sp.mark === 'bowl')  { c.beginPath(); c.arc(x, y - r * .1, r * .52, 0, Math.PI); c.stroke(); c.beginPath(); c.moveTo(x - r * .62, y - r * .1); c.lineTo(x + r * .62, y - r * .1); c.stroke(); }
+  if (sp.mark === 'sprig') { c.beginPath(); c.moveTo(x, y + r * .5); c.lineTo(x, y - r * .5); c.stroke(); for (const s of [-1, 1]) for (let k = 0; k < 3; k++) { const yy = y + r * (.22 - k * .28); c.beginPath(); c.ellipse(x + s * r * .24, yy, r * .24, r * .1, s * .5, 0, TAU); c.fill(); } }
+  if (sp.mark === 'spark') for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; c.beginPath(); c.moveTo(x + Math.cos(a) * r * .2, y + Math.sin(a) * r * .2); c.lineTo(x + Math.cos(a) * r * .58, y + Math.sin(a) * r * .58); c.stroke(); }
+  if (sp.mark === 'hex')   { c.lineWidth = 2.2 * u; for (const [dx, dy] of [[0, 0], [-.52, -.3], [.52, -.3], [-.52, .3], [.52, .3]]) c.stroke(hexPath(x + dx * r, y + dy * r, r * .3)); }
+  if (sp.mark === 'rule')  for (let k = 0; k < 4; k++) { const yy = y + r * (-.42 + k * .28), w = r * (k === 3 ? .34 : .62); c.beginPath(); c.moveTo(x - r * .62, yy); c.lineTo(x - r * .62 + w * 2, yy); c.stroke(); }
+  if (sp.mark === 'kin')   { for (const [dx, dy] of [[0, -.3], [-.32, .24], [.32, .24]]) { c.beginPath(); c.arc(x + dx * r, y + dy * r, r * .17, 0, TAU); c.fill(); } c.lineWidth = 2 * u; c.globalAlpha = .7; c.beginPath(); c.moveTo(x, y - r * .3); c.lineTo(x - r * .32, y + r * .24); c.lineTo(x + r * .32, y + r * .24); c.closePath(); c.stroke(); }
+  c.restore();
+  c.strokeStyle = line; c.lineWidth = ink ? 3 * u : 2.4 * u; c.globalAlpha = 1;
+  wob(c, ellPts(x, y, r, r, 0, 56), 2 * u, seed + 7, true);
+  c.restore();
+}
+
+// the anchor: the Liv glyph, in every shot. The crest (dormant) on paper until Liv ignites, the live
+// mark after; on night grounds the lightened live mark (the bronze vanishes on #171b16).
+// r keeps v1's call sites: glyph height = 9.5 r, placed on its centre junction.
+function anchor(c, x, y, r = 11, mode = 'ink', lit = false) {
+  const g = mode === 'blueprint' ? GLYPH.liveNight : lit ? GLYPH.live : GLYPH.crest;
+  const h = r * 9.5, w = h * 549 / 748;
+  c.drawImage(g, x - w * 274 / 549, y - h * 443 / 748, w, h);
+}
+
+const ORBIT = 330;   // radius the seven spaces sit on
+// v3.4: the day glyph grows to the night glyph's height across shell + spaces, so the cut to night has
+// no jump in scale (v3.3 cut from 152 to 270 tall). T = seconds from the start of the film.
+const LIV_H = 270;
+const dayGlyphR = T => T < 2 ? 11 + sm(0, .4, T) * 5 : lerp(16, LIV_H / 9.5, sm(2, 7.9, T));
+
+// ===================== SCENES =====================
+// 1. SEED — one dot, one life. Rings go out; the shell has not been drawn yet.
+function sceneSeed(c, tau, i) {
+  paper(c);
+  cam(c, CX, CY, lerp(1.30, 1.0, sm(0, 2.0, tau, easeOut)));
+  construction(c, CX, CY, 130, 3, PAL.guide, .55 * sm(.25, 1.0, tau));
+  const radii = [];
+  for (let k = 0; k < 4; k++) { const t = sm(.25 + k * .3, 2.1 + k * .3, tau, easeOut); if (t > .01) radii.push(46 + t * 320); }
+  if (radii.length) ripples(c, CX, CY, radii, alpha(PAL.blush, .9), 11, 3.2);
+  anchor(c, CX, CY, dayGlyphR(tau));
+}
+
+// 2. SHELL — the platform grows out of the dot: hex field inside a clipped disc, two
+// dashed orbits, then the seven spokes strike out to where the spaces will land.
+function sceneShell(c, tau, i) {
+  paper(c);
+  cam(c, CX, CY, 1.0);
+  const g = sm(0, 1.2, tau, easeOut), R = 50 + g * 470;
+  c.save(); c.beginPath(); c.arc(CX, CY, R, 0, TAU); c.clip();
+  hexLattice(c, [CX - 540, CY - 540, 1080, 1080], 44, alpha(PAL.green, .55), 1, 1.5);
+  c.restore();
+  c.strokeStyle = alpha(PAL.green, .75); c.lineWidth = 3;
+  wob(c, ellPts(CX, CY, R, R, 0, 96), 2, 12, true);
+  const o = sm(.45, 1.5, tau, easeOut);
+  if (o > .02) { dashedRing(c, CX, CY, ORBIT * o, alpha(PAL.ink, .7), 13, [16, 12], 2.2); dashedRing(c, CX, CY, ORBIT * .58 * o, alpha(PAL.ink, .45), 14, [10, 14], 1.6); }
+  // spokes: the seven seats on the orbit, struck out and ringed before anything sits
+  // in them. Bold enough to read at 240 px — the first cut of this was invisible there.
+  SPACES.forEach((sp, k) => {
+    const t = sm(0.55 + k * 0.06, 1.25 + k * 0.06, tau, easeOut);
+    if (t < .02) return;
+    const a = -Math.PI / 2 + k / SPACES.length * TAU;
+    const x = CX + Math.cos(a) * ORBIT * t, y = CY + Math.sin(a) * ORBIT * t;
+    c.save();
+    c.strokeStyle = alpha(PAL.ink, .5); c.lineWidth = 2.6;
+    c.beginPath(); c.moveTo(CX, CY); c.lineTo(x, y); c.stroke();
+    c.strokeStyle = alpha(sp.col, .95); c.lineWidth = 4;
+    cross(c, x, y, 26 * t);
+    c.lineWidth = 3; dashedRing(c, x, y, 52 * t, alpha(sp.col, .75), 70 + k, [10, 9], 3);
+    c.restore();
+  });
+  anchor(c, CX, CY, dayGlyphR(2 + tau));
+}
+
+// 3. SPACES — seven discs bloom around the orbit, one every 0.25 s, then all hold together.
+function sceneSpaces(c, tau, i) {
+  paper(c);
+  cam(c, CX, CY, 1.0);
+  c.save(); c.beginPath(); c.arc(CX, CY, 520, 0, TAU); c.clip();
+  hexLattice(c, [CX - 540, CY - 540, 1080, 1080], 44, alpha(PAL.green, .40), 1, 1.3);
+  c.restore();
+  c.strokeStyle = alpha(PAL.green, .6); c.lineWidth = 2.6; wob(c, ellPts(CX, CY, 520, 520, 0, 96), 2, 12, true);
+  dashedRing(c, CX, CY, ORBIT, alpha(PAL.ink, .7), 13, [16, 12], 2.2);
+  dashedRing(c, CX, CY, ORBIT * .58, alpha(PAL.ink, .45), 14, [10, 14], 1.6);
+  // the mycelium is already there, unlit: Liv hasn't woken yet
+  c.save(); c.globalAlpha = .38 * sm(0, .6, tau); c.drawImage(HYPHAE.paper, 0, 0, 1080, 1080); c.restore();
+  SPACES.forEach((sp, k) => {
+    const a = -Math.PI / 2 + k / SPACES.length * TAU;
+    const x = CX + Math.cos(a) * ORBIT, y = CY + Math.sin(a) * ORBIT;
+    const t = sm(0.05 + k * 0.22, 0.65 + k * 0.22, tau, easeOut);   // last one lands at 2.0 s, 2.0 s of hold
+    // an empty seat is drawn exactly as the shell drew it, so nothing pops at the cut
+    if (t < .02) { c.save(); c.strokeStyle = alpha(sp.col, .95); c.lineWidth = 4; cross(c, x, y, 26); c.lineWidth = 3; dashedRing(c, x, y, 52, alpha(sp.col, .75), 70 + k, [10, 9], 3); c.restore(); return; }
+    drawSpace(c, x, y, 82 * t, sp, 40 + k * 5);
+  });
+  anchor(c, CX, CY, dayGlyphR(4 + tau));
+}
+
+// 4. LIV — hard cut into the blueprint world through an ink blot, then the gold glow ignites.
+const LN = layer();
+const HYPHAE_AT = 3.5;              // hyphae start (s into liv); was 4.8
+const LIV_DUR = HYPHAE_AT + 2.2;    // hyphae take 2.0 s, then the same 0.2 s hold as v3.2 → 5.7 s (was 7.0)
+function sceneLiv(c, tau, i) {
+  const b = LN.getContext('2d');
+  night(b, PAL.night, 31);
+  cam(b, CX, CY, lerp(1.0, 1.16, sm(0, LIV_DUR, tau)));
+  b.strokeStyle = alpha(PAL.chalkDim, .55); b.lineWidth = 1.2;
+  wob(b, ellPts(CX, CY, 520, 520, 0, 96), 1.5, 12, true);
+  dashedRing(b, CX, CY, ORBIT, alpha(PAL.chalkDim, .7), 13, [16, 12], 1.5);
+  // Liv ignites: gold runs out along the hyphae from the glyph to every branch, then each lights.
+  // Liv's own roots grow first, then the gold carries on out along the hyphae to every branch.
+  // The roots worm out from ~0.7 s, then the gold carries on out along the hyphae to every branch.
+  // v3.3: the hyphae take over at 3.5 s while the roots are still moving — one growth, no pause.
+  const g = sm(HYPHAE_AT, HYPHAE_AT + 2.0, tau, easeOut);
+  b.save(); b.globalAlpha = .22; b.drawImage(HYPHAE.night, 0, 0, 1080, 1080); b.restore();
+  if (g > .02) {
+    b.save(); b.beginPath(); b.arc(CX, CY, 40 + 440 * g, 0, TAU); b.clip();
+    b.drawImage(HYPHAE.night, 0, 0, 1080, 1080); b.restore();
+    ripples(b, CX, CY, [90 * g, 170 * g, 255 * g], alpha('#c08a14', .5 * g), 46, 2.6);
+    dotBurst(b, CX, CY, 340, 22, alpha('#ffd35e', .95), 44, g);
+  }
+  SPACES.forEach((sp, k) => {
+    const a = -Math.PI / 2 + k / SPACES.length * TAU;
+    const x = CX + Math.cos(a) * ORBIT, y = CY + Math.sin(a) * ORBIT;
+    drawSpace(b, x, y, 82, sp, 40 + k * 5, 'blueprint');
+    if (g > .75) { b.save(); b.strokeStyle = alpha('#ffd35e', Math.min(1, (g - .75) * 3.4)); b.lineWidth = 4; b.beginPath(); b.arc(x, y, 86, 0, TAU); b.stroke(); b.restore(); }
+  });
+  livRoots(b, CX, CY, LIV_H, tau);
+
+  // shot 3 held at its last frame is what the blot eats into
+  sceneSpaces(c, 3.9, i);
+  blot(c, LN, CX, CY, lerp(0, 1080, sm(0, .75, tau, easeOut)), 32, PAL.night);
+}
+
+// 5. SIGN-OFF — back to paper, the orbit as dotted chalk, the mark written on.
+function sceneSignoff(c, tau, i) {
+  paper(c);
+  cam(c, CX, CY, 1.0);
+  dottedArc(c, CX, CY, lerp(ORBIT, 452, sm(.1, 1.1, tau, easeIO)), alpha(PAL.ink, .30), 51, 11, 1.3);
+  dottedArc(c, CX, CY, ORBIT * .62, alpha(PAL.blush, .5), 52, 9, 1.5);
+  // the spaces settle outward to the rim and shrink, clearing the middle for the mark.
+  // (Holding them at ORBIT put the subtitle straight through two discs.)
+  const e = sm(.1, 1.1, tau, easeIO), rad = lerp(ORBIT, 452, e), s = lerp(82, 40, e);
+  SPACES.forEach((sp, k) => {
+    const a = -Math.PI / 2 + k / SPACES.length * TAU;
+    drawSpace(c, CX + Math.cos(a) * rad, CY + Math.sin(a) * rad, s, sp, 40 + k * 5);
+  });
+  signOff(c, 'OneLyf', 'Many Spaces, Woven Together', {
+    x: CX, y: CY - 6, size: 96, sizeB: 52, ink: PAL.ink, ink2: PAL.blush,
+    progressA: sm(.25, .95, tau), progressB: sm(.85, 1.6, tau),
+  });
+  anchor(c, CX, CY + 150, 9, 'ink', true);
+}
+
+// ===================== SCORE =====================
+// Pentatonic on the gold. Per house audio law every effect has an explicit wet/dry mix:
+// the echo is a parallel send blended by echoMix (0 = bypass, 1 = fully wet), never in-line.
+function score(ac, t0, dest) {
+  const out = ac.createGain(); out.gain.value = .55; out.connect(dest);
+  const bus = ac.createGain();                       // everything plays into the bus
+  const dry = ac.createGain(), wet = ac.createGain();
+  const echoMix = .30;                               // presence of the echo, independent of its time/feedback
+  dry.gain.value = 1 - echoMix; wet.gain.value = echoMix;
+  const dl = ac.createDelay(1.0); dl.delayTime.value = .375;
+  const fb = ac.createGain(); fb.gain.value = .28;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  bus.connect(dry); dry.connect(out);
+  bus.connect(dl); dl.connect(lp); lp.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(out);
+
+  const N = (f, t, d, type, g) => note(ac, bus, f, t0, t, d, type, g);
+  // 0.0 seed: root, then sparse plucks
+  N(pentHz(-1, 0), 0.00, 2.4, 'sine', .22);
+  [0.25, 0.75, 1.25, 1.75].forEach((t, k) => N(pentHz(0, k), t, .8, 'triangle', .13));
+  // 2.0 shell: rising arpeggio as the hex field grows
+  for (let k = 0; k < 8; k++) N(pentHz(k < 5 ? 0 : 1, k), 2.0 + k * 0.25, .7, 'triangle', .14);
+  N(pentHz(-1, 2), 2.00, 2.4, 'sine', .18);
+  // 4.0 spaces: one note per space as it blooms, plus a soft tick (cues track the discs)
+  SPACES.forEach((_, k) => { const t = 4.0 + k * 0.25; N(pentHz(k < 5 ? 1 : 2, k), t, .9, 'triangle', .16); noiseBurst(ac, bus, t0, t, .05, .05, 60 + k); });
+  N(pentHz(-1, 0), 4.00, 3.9, 'sine', .20);
+  // 8.0 liv: the swell on the cut to night
+  N(pentHz(-1, 4), 8.00, LIV_DUR, 'sine', .26);
+  // low plucks under the root growth (v3.4: the 13.5 s one is gone; it muddied the sign-off)
+  [9.0, 10.5, 12.0].forEach((t, k) => N(pentHz(-1, k), t, 1.8, 'sine', .11));
+  [0, 2, 4].forEach((s, k) => N(pentHz(1, s), 8.0 + k * 0.25, 1.6, 'sine', .14));
+  noiseBurst(ac, bus, t0, 8.0, .35, .16, 77);
+  // 13.7 signoff: two notes and the root under them (moves with LIV_DUR since v3.3)
+  const so = 8.0 + LIV_DUR;
+  N(pentHz(-1, 0), so, 2.0, 'sine', .22);
+  N(pentHz(1, 0), so + .25, 1.2, 'triangle', .18);
+  N(pentHz(1, 3), so + 1.0, 1.4, 'triangle', .16);
+}
+
+// ===================== FILM =====================
+const TIMELINE = [
+  { name: 'seed',    dur: 2.0, fn: sceneSeed },
+  { name: 'shell',   dur: 2.0, fn: sceneShell },
+  { name: 'spaces',  dur: 4.0, fn: sceneSpaces },
+  { name: 'liv',     dur: LIV_DUR, fn: sceneLiv },
+  { name: 'signoff', dur: 2.0, fn: sceneSignoff },
+];
+// every image decodes before the film says it's ready (render-pw waits on window.__ready)
+Promise.all([...[...SPACES.map(sp => sp.img), ...Object.values(GLYPH), ...Object.values(HYPHAE)].map(i => i.decode()), document.fonts.load("96px Fraunces")])
+  .then(() => defineFilm({ timeline: TIMELINE, score, format: { ar: '1:1' } }));
+</script>
