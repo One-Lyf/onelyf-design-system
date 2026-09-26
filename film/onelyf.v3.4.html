@@ -80,43 +80,49 @@ const ROOT_TIPS = [
   [340, 584, 98], [366, 600, 85], [397, 591, 75], [394, 542, 62], [431, 576, 68], [472, 568, 30],
   [416, 507, 55], [461, 471, 15],
 ];
-const ROOT_REACH = 600;   // box units from the core; keeps every root clear of the two lower emblems
+// The overall shape is a rounded dome under the glyph, like a well-grown tree turned over: each stub
+// grows one main root sized to reach the dome's edge, every root stops near that edge (a small random
+// margin keeps the outline soft), and the main roots all take about as long, so the dome fills out
+// evenly. The individual roots still wander, kink and branch unevenly inside it.
+const ROOT_DOME = { x: 274, y: 470, rx: 400, ry: 390 };   // box units; clear of the two lower emblems
+const domeR = (x, y) => Math.hypot((x - ROOT_DOME.x) / ROOT_DOME.rx, (y - ROOT_DOME.y) / ROOT_DOME.ry);
 const angTo = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 const RSTRANDS = (() => {
   const r = rng(404), out = [];
   // position along a strand at time u after its start: steady speed plus a surge that never reverses
   const reachAt = (s, u) => u <= 0 ? 0 : Math.min(s.len, s.v * u + s.A * (Math.sin(s.w * u + s.ph) - Math.sin(s.ph)));
-  function strand(x, y, a, len, w0, depth, t0) {
-    const pts = [[x, y]], cum = [0];
-    let ang = a, curv = (r() - .5) * .08, L = 0;
+  // how far a root can run from (x, y) along angle a before it leaves the dome
+  const toEdge = (x, y, a) => { let d = 0; while (domeR(x + Math.cos(a) * d, y + Math.sin(a) * d) < 1 && d < 900) d += 4; return d; };
+  function strand(x, y, a, len, w0, depth, t0, v) {
+    const pts = [[x, y]], cum = [0], edge = .93 + r() * .1;
+    let ang = a, curv = (r() - .5) * .05, L = 0;
     while (L < len) {
-      curv = clamp((curv + (r() - .5) * .07) * .94, -.12, .12);
-      ang += curv + (r() - .5) * .2;
-      if (r() < .035) ang += (r() - .5) * 1.1;                        // a stone in the way
-      ang += angTo(ang, Math.PI / 2) * [.028, .016, .008, .004][depth]; // gravity, weaker per order
-      if (y < 470) ang += angTo(ang, Math.PI / 2) * .3;                // never climb into the crown
-      const st = 7 * (.6 + r() * .8);
+      curv = clamp((curv + (r() - .5) * .04) * .93, -.07, .07);
+      ang += curv + (r() - .5) * .1;
+      if (r() < .012) ang += (r() - .5) * .6;                           // a stone in the way
+      ang += angTo(ang, Math.atan2(y - 443, x - 274)) * [.035, .02, .01, .005][depth];  // outward from the core
+      if (y < 470) ang += angTo(ang, Math.PI / 2) * .3;                 // never climb into the crown
+      const st = 7 * (.7 + r() * .6);
       x += Math.cos(ang) * st; y += Math.sin(ang) * st; L += st;
       pts.push([x, y]); cum.push(L);
-      if (Math.hypot(x - 274, y - 443) > ROOT_REACH) break;
+      if (domeR(x, y) > edge) break;
     }
-    const v = (130 - depth * 18) * (.7 + r() * .6), w = TAU * (.7 + r() * .9);
-    const s = { pts, cum, len: L, w0, t0, v, w, A: .75 * v / w, ph: r() * TAU };
+    const w = TAU * (.7 + r() * .9);
+    const s = { pts, cum, len: L, w0, t0, v, w, A: .6 * v / w, ph: r() * TAU };
     out.push(s);
     if (depth >= 3 || pts.length < 6) return;
-    const nb = Math.floor(r() * [3.5, 2.6, 1.8][depth]) + (depth === 0 ? 1 : 0);
+    const nb = Math.floor(r() * [3, 2.4, 1.6][depth]) + (depth === 0 ? 1 : 0);
     for (let k = 0; k < nb; k++) {
       const i = 2 + Math.floor(r() * (pts.length * .8 - 2)), f = cum[i] / L;
       let u = 0; while (reachAt(s, u) < cum[i]) u += .02;              // when the parent's tip passes here
       const side = r() < .5 ? -1 : 1, da = Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]);
-      strand(pts[i][0], pts[i][1], da + side * (.35 + r() * .95), (L - cum[i]) * (.25 + r() * .7) + r() * 40,
-        w0 * (1 - .55 * f) * (.55 + r() * .25), depth + 1, t0 + u + r() * .25);
+      strand(pts[i][0], pts[i][1], da + side * (.35 + r() * .8), (L - cum[i]) * (.3 + r() * .6) + r() * 30,
+        w0 * (1 - .55 * f) * (.55 + r() * .25), depth + 1, t0 + u + r() * .2, v * (.8 + r() * .3));
     }
   }
-  for (const [x, y, deg] of ROOT_TIPS) {
-    const n = r() < .25 ? 0 : r() < .75 ? 1 : 2;                        // some stubs stay bare
-    for (let k = 0; k < n; k++)
-      strand(x, y, deg * Math.PI / 180 + (r() - .5) * .7, 180 + r() * 260, 9 + r() * 5, 0, .7 + r() * 1.1);
+  for (const [x, y, deg] of ROOT_TIPS) {                                 // every stub grows one main root
+    const a = deg * Math.PI / 180 + (r() - .5) * .3, len = toEdge(x, y, a) * (.9 + r() * .15);
+    strand(x, y, a, len, 9 + r() * 5, 0, .7 + r() * .35, len / (2.4 + r() * .5));
   }
   out.forEach(s => { s.col = mix('#c9964a', '#d8a83c', r()); s.reachAt = u => reachAt(s, u); });
   return out;
