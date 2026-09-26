@@ -40,3 +40,11 @@ v3 "Root Glyph" brand brief; the visual boards ship as the `RootGlyphBoard` and
 - **Avoid:** SaaS aesthetics, AI gradients, glowing neon, futuristic robot-assistant UI, crypto visuals, generic startup branding.
 - **Device-agnostic / post-mobile** — works for voice, ambient displays, wearables, large screens.
 - **AI-optional, family-safe, privacy-visible** — consent shown as connections; no dark patterns.
+
+## Liv's voice
+
+- **Canon (Jeff, 2026-09-26):** the brand film's narration. ElevenLabs voice "Liv" ("Mother – Strong,
+  Warm, Calm", `TLeBnGDqmcwGf936zZyW`), nurturing and clear, never sultry or husky.
+- **Read-aloud / TTS and previews:** `eleven_v3`, directed `[warmly] [clearly]`.
+- **Live (phone, hands-free):** the same voice on `eleven_flash_v2_5`, so replies start at once.
+- Defined once as `LIV_VOICE` (`src/livVoice.ts`); a user's own voice choice still wins for them.
