@@ -2,6 +2,7 @@
 // Moved verbatim out of LivChat.tsx (W3 legibility refactor). LivChat.tsx re-exports every
 // type here, so `import { type LivChatProps } from './components/LivChat'` keeps working.
 import type { ReactNode } from 'react'
+import type { LivVoiceSurface } from '../../livVoice'
 import type { GlyphVariant } from '../../Glyph'
 import type { LivModel } from '../livChatModels'
 import type { LivEffort, LivMode, LivVerbosity } from '../livChatModes'
@@ -244,8 +245,12 @@ export interface LivChatAdapter {
   // through the app's own voice (e.g. Google TTS + FX). When absent, Hands-free falls back to the
   // browser's speechSynthesis, so voice-out works everywhere; the mic (speech-in) is always
   // browser-native and gated only on SpeechRecognition support.
+  // `opts.surface` says which Liv voice surface is asking (LIV_VOICE, src/livVoice.ts): 'live' for
+  // the Hands-free auto-read of each reply (start fast: the canon's flash model), 'readAloud' for a
+  // message's Play button (the canon's expressive eleven_v3). Pass it on to platform-liv-tts as
+  // `surface`; an app that ignores it still works.
   voice?: {
-    speak(text: string): Promise<void>
+    speak(text: string, opts?: { surface?: LivVoiceSurface }): Promise<void>
     stop?(): void
   }
   // Optional: called from a user gesture the exact moment the Hands-free (speaker) toggle
