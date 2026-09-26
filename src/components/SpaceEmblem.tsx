@@ -14,6 +14,10 @@ import wavesUrl from '../assets/emblems/waves.svg?no-inline'
 import markLightUrl from '../assets/onelyf-mark-light.svg?no-inline'
 import markDarkUrl from '../assets/onelyf-mark-dark.svg?no-inline'
 import appIconUrl from '../assets/onelyf-app-icon.svg?no-inline'
+import wovenLightUrl from '../assets/onelyf-mark-woven-light.svg?no-inline'
+import wovenDarkUrl from '../assets/onelyf-mark-woven-dark.svg?no-inline'
+import wovenAppIconUrl from '../assets/onelyf-app-icon-woven.svg?no-inline'
+import faviconUrl from '../assets/onelyf-favicon.svg?no-inline'
 import { spaces, type BranchKey } from '../tokens'
 
 /** The OneLyf tagline. Title Case, always. */
@@ -49,15 +53,23 @@ export function SpaceEmblem({ space, size = 48, alt }: SpaceEmblemProps) {
   )
 }
 
-export type OneLyfMarkVariant = 'light' | 'dark' | 'app-icon'
+// The woven cut (scripts/emblems/woven_mark.py) is the embroidered mark from the brand film:
+// satin glyph, couched cord, running-stitch rings, on a round linen patch. Day = the crest in
+// bronze (OneLyf at rest), night = the live glyph in gold. The flat cut stays as the fallback
+// for print, tiny sizes and reduced-texture contexts. PNG exports live in assets/icons/.
+export type OneLyfMarkVariant =
+  | 'light' | 'dark' | 'app-icon'
+  | 'woven-light' | 'woven-dark' | 'woven-app-icon' | 'favicon'
 
 export const MARK_URLS: Record<OneLyfMarkVariant, string> = {
   light: markLightUrl, dark: markDarkUrl, 'app-icon': appIconUrl,
+  'woven-light': wovenLightUrl, 'woven-dark': wovenDarkUrl, 'woven-app-icon': wovenAppIconUrl, favicon: faviconUrl,
 }
 
 export interface OneLyfMarkProps {
-  /** light = transparent, for light grounds; dark = transparent, for night grounds;
-   *  app-icon = square with the night ground baked in. */
+  /** light / dark = flat, transparent, for light or night grounds; app-icon = flat, night square.
+   *  woven-light / woven-dark = embroidered on a round linen patch; woven-app-icon = the glyph in a
+   *  cord ring on night linen; favicon = the small cut (glyph + seven branch dots). */
   variant?: OneLyfMarkVariant
   size?: number
   alt?: string
