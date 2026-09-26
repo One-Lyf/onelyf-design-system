@@ -71,7 +71,7 @@ export const colorDark = {
 // accent carries forward into that space's app; the foundation palette stays
 // shared. `status` mirrors the brief: live / building / planned.
 export type SpaceKey =
-  | 'finlyf' | 'homlyf' | 'hlthlyf' | 'gudlyf' | 'wrklyf' | 'skoollyf' | 'family'
+  | 'finlyf' | 'homlyf' | 'hlthlyf' | 'gudlyf' | 'wrklyf' | 'skoollyf' | 'waves' | 'family'
 
 export interface Space {
   key: SpaceKey
@@ -88,10 +88,20 @@ export const spaces: Record<SpaceKey, Space> = {
   gudlyf:   { key: 'gudlyf',   label: 'GudLyf',   accent: '#5d648f', accentName: 'indigo',     status: 'building' },
   wrklyf:   { key: 'wrklyf',   label: 'WrkLyf',   accent: '#b36c42', accentName: 'copper',     status: 'building' },
   skoollyf: { key: 'skoollyf', label: 'SkoolLyf', accent: '#6f8090', accentName: 'blue-gray',  status: 'planned' },
+  waves:    { key: 'waves',    label: 'Waves',    accent: '#2f7fa8', accentName: 'sea blue',   status: 'live' },
+  // Family is an audience TIER that runs across every branch, not a branch of its own. It keeps
+  // an accent for tier/plan UI (e.g. Family plan management) but has no emblem and no ring seat.
   family:   { key: 'family',   label: 'Family',   accent: '#8d6b52', accentName: 'walnut',     status: 'live' },
 } as const
 
 export const spaceList: Space[] = Object.values(spaces)
+
+// ── Branches (the ring of the OneLyf mark) ──────────────────────────────────
+// The seven domains that sit as nodes around Liv, clockwise from the top, each with a woven
+// patch emblem (<SpaceEmblem>). Family is deliberately absent: it's a tier, not a branch.
+export type BranchKey = Exclude<SpaceKey, 'family'>
+export const branchOrder: BranchKey[] = ['finlyf', 'homlyf', 'hlthlyf', 'gudlyf', 'wrklyf', 'skoollyf', 'waves']
+export const branchList: Space[] = branchOrder.map((k) => spaces[k])
 
 // ── Spacing ─────────────────────────────────────────────────────────────────
 // One rhythm, everywhere. A 4px base step so every gap/pad/margin lands on the
